@@ -16,3 +16,8 @@ include_directories(
 
 add_library(${PROJECT_NAME} STATIC ${SRC_FILES} ${INCLUDE_FILES})
 target_include_directories (${PROJECT_NAME} PUBLIC ${PROJECT_SOURCE_DIR} ${PROJECT_SOURCE_DIR}/include)
+
+add_executable(${PROJECT_NAME}_test_node 
+    src/test.cpp
+    src/trajectory_server.cpp
+)

@@ -1,5 +1,5 @@
 /*
-* trajectory_server.cpp
+* test.cpp
 *
 * ---------------------------------------------------------------------
 * Copyright (C) 2022 Matthew (matthewoots at gmail.com)
@@ -27,21 +27,16 @@
 #define KCYN  "\033[36m"
 #define KWHT  "\033[37m"
 
-namespace trajectory_server
+int main()
 {
-    bspline_trajectory::bs_pva_state_3d bspline_server::get_bs_path
-        (vector<Vector3d> cp)
-    {
-        bspline_trajectory::bs_pva_state_3d pva3;
-
-        return pva3;
-    }
+    // start our trajectory server
+    // bspline_server(int _order, double _duration_secs, double _command_interval) 
+    trajectory_server::bspline_server ts(5, 5.0, 0.01);
     
-    bspline_server::pva_cmd bspline_server::get_command_on_path()
-    {
-        bspline_server::pva_cmd pva;
-
-        return pva;
-    }
     
+
+    // we have to close the trajectory everytime we finish
+    ts.~bspline_server();
+    
+    return 1;
 }

@@ -23,6 +23,9 @@
 #include <chrono>
 #include <ctime>
 #include <string>
+#include <unistd.h>
+#include <cstdlib>
+#include <thread>   
 #include <Eigen/Dense>
 
 #include "bspline_utils.hpp"
@@ -38,25 +41,72 @@
 
 using namespace Eigen;
 using namespace trajectory;
+using namespace std::chrono;
 using namespace std;
 
 namespace trajectory_server
 {
-    class bspline_server
+
+    class test_utils
     {
         public:
-            bspline_server(int _order, double duration) 
+        void test_chronos()
+        {
+            auto start = system_clock::now();
+            std::this_thread::sleep_for(std::chrono::milliseconds(1)); // sleep for milliseconds
+            auto end = system_clock::now();
+            time_t end_time_t = system_clock::to_time_t(end);
+            auto test_time_diff = duration<double>(end - start).count();
+            std::cout << "test chronos: " << test_time_diff << "s" << std::endl;
+        }
+    };
+
+    class bspline_server
+    {
+        struct pva_cmd
+        {
+            std::time_t t;
+            Eigen::Vector3d p;
+            Eigen::Vector3d v;
+            Eigen::Vector3d a;
+        };
+
+        trajectory_server::test_utils tu;
+
+        public:
+            bspline_server(int _order, double _duration_secs, double _command_interval) 
             {
+                tu.test_chronos();
                 order = _order;
                 stime = std::chrono::system_clock::now();
+                // convert duration from secs to milliseconds
+                long int duration_msecs = (long int)(_duration_secs * 1000);
+                // initialize the very first pair of time span (start and end)
+                time_span_chronos.clear();
+                time_span_chronos.push_back(stime);
+                time_span_chronos.push_back(
+                    stime + milliseconds(duration_msecs)); // from the alias std::chrono::seconds
+                
+                timespan.clear();
+                timespan.push_back(0.0);
+                timespan.push_back(duration<double>(time_span_chronos[1] - time_span_chronos[0]).count());
+
+                knotdiv = (int)floor(_duration_secs / _command_interval);
             }
+
+            bspline_trajectory::bs_pva_state_3d get_bs_path(vector<Vector3d> cp);
+
+            pva_cmd get_command_on_path();
+
             ~bspline_server() {std::cout << "close bs_server" << std::endl;}
 
         private:
             /** @brief Parameters for libbspline */ 
-            int order;
+            int order, knotdiv;
             vector<double> timespan;
-            std::chrono::time_point<std::chrono::system_clock> stime; // start time for bspline server in time_t
+
+            time_point<std::chrono::system_clock> stime; // start time for bspline server in time_t
+            vector<time_point<std::chrono::system_clock>> time_span_chronos;
 
     };
 
