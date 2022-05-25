@@ -27,3 +27,7 @@
 #define KCYN  "\033[36m"
 #define KWHT  "\033[37m"
 
+namespace trajectory_server
+{
+
+}
