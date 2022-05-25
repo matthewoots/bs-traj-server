@@ -52,12 +52,21 @@ namespace trajectory_server
         public:
         void test_chronos()
         {
-            auto start = system_clock::now();
+            time_point<std::chrono::system_clock> start = system_clock::now();
             std::this_thread::sleep_for(std::chrono::milliseconds(1)); // sleep for milliseconds
-            auto end = system_clock::now();
+            time_point<std::chrono::system_clock> end = system_clock::now();
             time_t end_time_t = system_clock::to_time_t(end);
             auto test_time_diff = duration<double>(end - start).count();
-            std::cout << "test chronos: " << test_time_diff << "s" << std::endl;
+            std::cout << "[tserver]" << " test chronos: " << 
+                KGRN << test_time_diff << KNRM << "s" << std::endl;
+        }
+
+        void print_time(time_point<std::chrono::system_clock> query, string topic)
+        {
+            time_point<std::chrono::system_clock> end = system_clock::now();
+            auto test_time_diff = duration<double>(end - query).count();
+            std::cout << topic << " " << 
+                KGRN << test_time_diff << KNRM << "s" << std::endl;
         }
     };
 
@@ -72,13 +81,27 @@ namespace trajectory_server
         };
 
         trajectory_server::test_utils tu;
+        bspline_trajectory bsu;
 
         public:
-            bspline_server(int _order, double _duration_secs, double _command_interval) 
+            bspline_server(
+                int _order, double _duration_secs, double _command_interval, int _knot_div) 
             {
                 tu.test_chronos();
+                command_interval = _command_interval;
+                knot_div = _knot_div;
                 order = _order;
                 stime = std::chrono::system_clock::now();
+
+                // Re-adjust duration so that our knots and divisions are matching
+                duration_secs = bsu.get_corrected_duration(
+                    command_interval, _duration_secs);
+
+                knot_size = bsu.get_knots_size(
+                    command_interval, duration_secs, knot_div);
+
+                knot_interval = duration_secs / knot_size;
+
                 // convert duration from secs to milliseconds
                 long int duration_msecs = (long int)(_duration_secs * 1000);
                 // initialize the very first pair of time span (start and end)
@@ -90,19 +113,24 @@ namespace trajectory_server
                 timespan.clear();
                 timespan.push_back(0.0);
                 timespan.push_back(duration<double>(time_span_chronos[1] - time_span_chronos[0]).count());
-
-                knotdiv = (int)floor(_duration_secs / _command_interval);
+            }
+            
+            ~bspline_server() 
+            {
+                std::cout << "[tserver]" << 
+                    KRED << " close bs_server" << KNRM << std::endl;
             }
 
-            bspline_trajectory::bs_pva_state_3d get_bs_path(vector<Vector3d> cp);
+            bspline_trajectory::bs_pva_state_3d get_bs_path(vector<Eigen::Vector3d> cp);
 
             pva_cmd get_command_on_path();
 
-            ~bspline_server() {std::cout << "close bs_server" << std::endl;}
+            bool valid_cp_count_check(size_t cp_size);
 
         private:
             /** @brief Parameters for libbspline */ 
-            int order, knotdiv;
+            int order, knot_div, knot_size;
+            double command_interval, duration_secs, knot_interval;
             vector<double> timespan;
 
             time_point<std::chrono::system_clock> stime; // start time for bspline server in time_t

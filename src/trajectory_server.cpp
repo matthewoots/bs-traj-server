@@ -30,9 +30,27 @@
 namespace trajectory_server
 {
     bspline_trajectory::bs_pva_state_3d bspline_server::get_bs_path
-        (vector<Vector3d> cp)
+        (vector<Eigen::Vector3d> cp)
     {
         bspline_trajectory::bs_pva_state_3d pva3;
+        int acceptable_cp_size = bsu.get_valid_cp_size(
+            knot_interval, order, timespan);
+        
+        std::cout << "[tserver]" <<
+            " cp_size/acceptable " <<
+            cp.size() << "/" << acceptable_cp_size << std::endl;
+        
+        // Crop the control points to what can be given to the bspline
+        vector<Eigen::Vector3d> acceptable_cp;
+        for (int i = 0; i < acceptable_cp_size; i++)
+            acceptable_cp.push_back(cp[i]);
+
+        pva3 = bsu.get_uni_bspline_3d(
+            order, timespan, acceptable_cp, knot_div);
+
+        std::cout << "[tserver]" <<
+            " path_size: " <<
+            pva3.pos.size() << std::endl;
 
         return pva3;
     }
@@ -42,6 +60,11 @@ namespace trajectory_server
         bspline_server::pva_cmd pva;
 
         return pva;
+    }
+
+    bool bspline_server::valid_cp_count_check(size_t cp_size)
+    {
+        return ((int)cp_size > (knot_size + order));
     }
     
 }
