@@ -26,6 +26,7 @@
 #include <unistd.h>
 #include <cstdlib>
 #include <thread>   
+#include <mutex>
 #include <Eigen/Dense>
 
 #include "bspline_utils.hpp"
@@ -72,19 +73,23 @@ namespace trajectory_server
 
     class bspline_server
     {
-        struct pva_cmd
-        {
-            std::time_t t;
-            Eigen::Vector3d p;
-            Eigen::Vector3d v;
-            Eigen::Vector3d a;
-        };
-
-        trajectory_server::test_utils tu;
-        bspline_trajectory bsu;
-
         public:
-            bspline_server(
+
+            struct pva_cmd
+            {
+                double t; // Relative to start time 
+                Eigen::Vector3d p;
+                Eigen::Vector3d v;
+                Eigen::Vector3d a;
+                double yaw;
+            };
+
+            trajectory_server::test_utils tu;
+            bspline_trajectory bsu;
+        
+            bspline_server(){}
+
+            void init_bspline_server(
                 int _order, double _duration_secs, double _command_interval, int _knot_div) 
             {
                 tu.test_chronos();
@@ -121,17 +126,29 @@ namespace trajectory_server
                     KRED << " close bs_server" << KNRM << std::endl;
             }
 
-            bspline_trajectory::bs_pva_state_3d get_bs_path(vector<Eigen::Vector3d> cp);
+            bspline_trajectory::bs_pva_state_3d get_bs_path(
+                vector<Eigen::Vector3d> cp);
+            
+            void update_bs_path(vector<Eigen::Vector3d> cp);
 
-            pva_cmd get_command_on_path();
+            bspline_server::pva_cmd update_get_command_on_path();
 
             bool valid_cp_count_check(size_t cp_size);
 
+            double get_running_time();
+
         private:
+
+            std::mutex bs_path_mutex;
+            std::mutex cmd_mutex;
+
             /** @brief Parameters for libbspline */ 
             int order, knot_div, knot_size;
             double command_interval, duration_secs, knot_interval;
             vector<double> timespan;
+
+            bspline_trajectory::bs_pva_state_3d pva_state;
+            bspline_server::pva_cmd pva_cmd_msg;
 
             time_point<std::chrono::system_clock> stime; // start time for bspline server in time_t
             vector<time_point<std::chrono::system_clock>> time_span_chronos;

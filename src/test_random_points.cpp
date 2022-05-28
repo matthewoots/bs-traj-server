@@ -1,5 +1,5 @@
 /*
-* test.cpp
+* test_random_points.cpp
 *
 * ---------------------------------------------------------------------
 * Copyright (C) 2022 Matthew (matthewoots at gmail.com)
@@ -33,14 +33,16 @@ int main()
     trajectory_server::test_utils tu;
 
     std::random_device dev;
-    std:mt19937 generator(dev());
+    std::mt19937 generator(dev());
     std::uniform_real_distribution<double> dis(0.0, 1.0);
 
     // start our trajectory server
     // bspline_server(int _order, double _duration_secs, double _command_interval) 
     // 25Hz publish rate for command
-    trajectory_server::bspline_server ts(5, 8.0, 0.04, 10);
+    trajectory_server::bspline_server ts;
     
+    ts.init_bspline_server(5, 8.0, 0.04, 10);
+
     int test_cycles = 2;
     double random_multiplier = 5.0;
 

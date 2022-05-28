@@ -9,15 +9,22 @@ file(GLOB SRC_FILES "src/*.cpp")
 find_package(Eigen3 REQUIRED)
 
 include_directories(
-    include
+    ${PROJECT_SOURCE_DIR}/include
     ${EIGEN3_INCLUDE_DIRS} 
     libbspline/cpp/include
 )
 
-add_library(${PROJECT_NAME} STATIC ${SRC_FILES} ${INCLUDE_FILES})
-target_include_directories (${PROJECT_NAME} PUBLIC ${PROJECT_SOURCE_DIR} ${PROJECT_SOURCE_DIR}/include)
+add_subdirectory(libbspline/cpp)
 
-add_executable(${PROJECT_NAME}_test_node 
-    src/test.cpp
+add_executable(${PROJECT_NAME}_test_random_points_node 
+    src/test_random_points.cpp
     src/trajectory_server.cpp
 )
+
+add_executable(${PROJECT_NAME}_test_concatenate_node 
+    src/test_concatenate.cpp
+    src/trajectory_server.cpp
+)
+
+add_library(${PROJECT_NAME} STATIC ${SRC_FILES} ${INCLUDE_FILES})
+target_include_directories (${PROJECT_NAME} PUBLIC ${PROJECT_SOURCE_DIR} ${PROJECT_SOURCE_DIR}/include)
