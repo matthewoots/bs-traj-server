@@ -29,10 +29,8 @@
 
 namespace trajectory_server
 {
-    bspline_trajectory::bs_pva_state_3d bspline_server::get_bs_path(
-        vector<Eigen::Vector3d> cp)
+    vector<Eigen::Vector3d> bspline_server::get_valid_cp_vector(vector<Eigen::Vector3d> cp)
     {
-        bspline_trajectory::bs_pva_state_3d pva3;
         int acceptable_cp_size = bsu.get_valid_cp_size(
             knot_interval, order, timespan);
         
@@ -44,6 +42,16 @@ namespace trajectory_server
         vector<Eigen::Vector3d> acceptable_cp;
         for (int i = 0; i < acceptable_cp_size; i++)
             acceptable_cp.push_back(cp[i]);
+            
+        return acceptable_cp;
+    }
+
+    bspline_trajectory::bs_pva_state_3d bspline_server::get_bs_path(
+        vector<Eigen::Vector3d> cp)
+    {
+        bspline_trajectory::bs_pva_state_3d pva3;
+        vector<Eigen::Vector3d> acceptable_cp = 
+            get_valid_cp_vector(cp);
 
         pva3 = bsu.get_uni_bspline_3d(
             order, timespan, acceptable_cp, knot_div);
@@ -65,7 +73,7 @@ namespace trajectory_server
     
     }
     
-    bspline_server::pva_cmd bspline_server::update_get_command_on_path()
+    bspline_server::pva_cmd bspline_server::update_get_command_on_path_by_idx()
     {
         std::lock_guard<std::mutex> path_lock(bs_path_mutex);
         std::lock_guard<std::mutex> cmd_lock(cmd_mutex);
@@ -76,11 +84,12 @@ namespace trajectory_server
 
         bool early_break = false;
         int idx;
+        double rel_now_time = duration<double>(now_time - stime).count();
         // Check the time now and compare to knots
         for(int i = 0; i < (int)pva_state.rts.size(); i++)
         {
-            double rel_now_time = duration<double>(now_time - stime).count();
-            if(abs(pva_state.rts[i] - rel_now_time) < 0.001)
+            // std::cout << pva_state.rts[i] - rel_now_time << std::endl;
+            if((pva_state.rts[i] - rel_now_time) > 0)
             {
                 idx = i;
                 early_break = true;
@@ -89,10 +98,14 @@ namespace trajectory_server
         }
         // if no early break, return update t as -1 to reject the command 
         if (!early_break)
+        {
             pva.t = -1.0;
+            return pva;
+        }
         else
         {
             pva.p = pva_state.pos[idx];
+            pva.t = pva_state.rts[idx];
             
             // Update the velocity here but we can also calculate yaw here
             // We can do it 2 ways, using velocity or position difference vector
@@ -117,6 +130,44 @@ namespace trajectory_server
             pva.yaw = atan2(_norm_y,_norm_x);
 
         }
+
+        return pva;
+    }
+
+    bspline_server::pva_cmd bspline_server::update_get_command_by_time(
+        vector<Eigen::Vector3d> cp)
+    {
+        std::lock_guard<std::mutex> path_lock(bs_path_mutex);
+        std::lock_guard<std::mutex> cmd_lock(cmd_mutex);
+
+        time_point<std::chrono::system_clock> now_time = 
+            system_clock::now();
+        bspline_server::pva_cmd pva;
+
+        double rel_now_time = duration<double>(now_time - stime).count();
+        if ((timespan[1] - rel_now_time) < 0)
+        {
+            pva.t = -1.0;
+            return pva;
+        }
+
+        bspline_trajectory::bs_pva_state_3d pva3;
+        pva3 = bsu.get_single_bspline_3d(
+            order, timespan, cp, rel_now_time);
+
+        pva.p = pva3.pos[0];
+        pva.t = rel_now_time;
+        
+        // if (!pva3.vel.empty())
+        pva.v = pva3.vel[0];
+        double _norm = sqrt(pow(pva.v.x(),2) + pow(pva.v.y(),2));
+        double _norm_x = pva.v.x() / _norm;
+        double _norm_y = pva.v.y() / _norm;
+
+        if (!pva3.acc.empty())
+            pva.a = pva3.acc[0];
+        
+        pva.yaw = atan2(_norm_y,_norm_x);
 
         return pva;
     }

@@ -1,3 +1,6 @@
 [submodule "libbspline"]
 	path = libbspline
 	url = https://github.com/matthewoots/libbspline.git
+[submodule "LBFGSpp"]
+	path = LBFGSpp
+	url = https://github.com/matthewoots/LBFGSpp.git

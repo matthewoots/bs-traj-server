@@ -129,13 +129,28 @@ namespace trajectory_server
             bspline_trajectory::bs_pva_state_3d get_bs_path(
                 vector<Eigen::Vector3d> cp);
             
+            /** @brief update_get_command_on_path_by_idx and update_bs_path
+             * These 2 functions comes together, this is because update_bs_path have to generate
+             * the bspline path and the command functions has to search for the idx
+            */
             void update_bs_path(vector<Eigen::Vector3d> cp);
-
-            bspline_server::pva_cmd update_get_command_on_path();
+            bspline_server::pva_cmd update_get_command_on_path_by_idx();
+            
+            /** @brief update_get_command_on_path_by_time
+             * Do not have to generate the whole path again, just use the matrix to find the command
+             * at that point in time
+            */
+            bspline_server::pva_cmd update_get_command_by_time(
+                vector<Eigen::Vector3d> cp);
 
             bool valid_cp_count_check(size_t cp_size);
 
             double get_running_time();
+
+            double get_duration_from_start_time(){
+                return duration<double>(system_clock::now() - stime).count();}
+
+            vector<Eigen::Vector3d> get_valid_cp_vector(vector<Eigen::Vector3d> cp);
 
         private:
 
