@@ -52,7 +52,7 @@ using namespace std;
 namespace common_utils
 {
     /** @brief Filter/Crop point cloud with the dimensions given */
-    pcl::PointCloud<pcl::PointXYZ>::Ptr pcl_ptr_box_crop(
+    inline pcl::PointCloud<pcl::PointXYZ>::Ptr pcl_ptr_box_crop(
         pcl::PointCloud<pcl::PointXYZ>::Ptr _pc, 
         Eigen::Vector3d centroid, Eigen::Vector3d dimension)
     {   

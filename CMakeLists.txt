@@ -18,6 +18,7 @@ include_directories(
 )
 
 add_subdirectory(libbspline/cpp)
+add_subdirectory(librrtserver)
 
 add_executable(${PROJECT_NAME}_test_random_point_node 
     src/test_random_points.cpp

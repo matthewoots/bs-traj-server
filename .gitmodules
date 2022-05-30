@@ -4,3 +4,6 @@
 [submodule "LBFGSpp"]
 	path = LBFGSpp
 	url = https://github.com/matthewoots/LBFGSpp.git
+[submodule "librrtserver"]
+	path = librrtserver
+	url = https://github.com/matthewoots/librrtserver.git
