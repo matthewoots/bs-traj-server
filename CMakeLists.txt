@@ -15,6 +15,7 @@ include_directories(
     ${PCL_INCLUDE_DIRS}
     libbspline/cpp/include
     LBFGSpp/include
+    librrtserver/include
 )
 
 add_subdirectory(libbspline/cpp)
@@ -29,6 +30,13 @@ add_executable(${PROJECT_NAME}_test_concatenate_node
     src/test_concatenate.cpp
     src/trajectory_server.cpp
 )
+
+add_executable(${PROJECT_NAME}_test_rrt_bspline_node
+    src/test_rrt_bspline_pipeline
+    src/trajectory_server.cpp
+)
+target_link_libraries(${PROJECT_NAME}_test_rrt_bspline_node 
+    ${PCL_LIBRARIES})
 
 add_executable(${PROJECT_NAME}_test_optimization_node 
     src/test_random_points.cpp

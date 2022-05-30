@@ -47,7 +47,6 @@ using namespace std;
 
 namespace trajectory_server
 {
-
     class test_utils
     {
         public:
