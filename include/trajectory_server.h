@@ -85,6 +85,7 @@ namespace trajectory_server
 
             trajectory_server::test_utils tu;
             bspline_trajectory bsu;
+            common_trajectory_tool ctt;
         
             bspline_server(){}
 
@@ -95,7 +96,6 @@ namespace trajectory_server
                 command_interval = _command_interval;
                 knot_div = _knot_div;
                 order = _order;
-                stime = std::chrono::system_clock::now();
 
                 // Re-adjust duration so that our knots and divisions are matching
                 duration_secs = bsu.get_corrected_duration(
@@ -105,6 +105,16 @@ namespace trajectory_server
                     command_interval, duration_secs, knot_div);
 
                 knot_interval = duration_secs / knot_size;
+
+                vector<Eigen::Vector3d> initialization_cp;
+                for (int i = 0; i < 100; i++)
+                    initialization_cp.push_back(Eigen::Vector3d::Zero());
+                
+                vector<Eigen::Vector3d> acceptable_cp = 
+                    get_valid_cp_vector(initialization_cp);
+                acceptable_cp_size = (int)acceptable_cp.size();
+
+                stime = std::chrono::system_clock::now();
 
                 // convert duration from secs to milliseconds
                 long int duration_msecs = (long int)(_duration_secs * 1000);
@@ -117,6 +127,10 @@ namespace trajectory_server
                 timespan.clear();
                 timespan.push_back(0.0);
                 timespan.push_back(duration<double>(time_span_chronos[1] - time_span_chronos[0]).count());
+            
+                original_timespan.clear();
+                original_timespan.push_back(0.0);
+                original_timespan.push_back(duration<double>(time_span_chronos[1] - time_span_chronos[0]).count());
             }
             
             ~bspline_server() 
@@ -151,6 +165,11 @@ namespace trajectory_server
 
             vector<Eigen::Vector3d> get_valid_cp_vector(vector<Eigen::Vector3d> cp);
 
+            vector<Eigen::Vector3d> get_redistributed_cp_vector(
+                vector<Eigen::Vector3d> cp, double max_vel);
+
+            void update_time_span_with_knots();
+
         private:
 
             std::mutex bs_path_mutex;
@@ -158,8 +177,12 @@ namespace trajectory_server
 
             /** @brief Parameters for libbspline */ 
             int order, knot_div, knot_size;
+            int acceptable_cp_size;
             double command_interval, duration_secs, knot_interval;
             vector<double> timespan;
+            vector<double> original_timespan;
+
+            vector<Eigen::Vector3d> bs_control_points;
 
             bspline_trajectory::bs_pva_state_3d pva_state;
             bspline_server::pva_cmd pva_cmd_msg;

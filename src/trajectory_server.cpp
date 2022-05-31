@@ -30,10 +30,7 @@
 namespace trajectory_server
 {
     vector<Eigen::Vector3d> bspline_server::get_valid_cp_vector(vector<Eigen::Vector3d> cp)
-    {
-        int acceptable_cp_size = bsu.get_valid_cp_size(
-            knot_interval, order, timespan);
-        
+    {        
         std::cout << "[tserver]" <<
             " cp_size/acceptable " <<
             cp.size() << "/" << acceptable_cp_size << std::endl;
@@ -52,6 +49,8 @@ namespace trajectory_server
         bspline_trajectory::bs_pva_state_3d pva3;
         vector<Eigen::Vector3d> acceptable_cp = 
             get_valid_cp_vector(cp);
+
+        bs_control_points = acceptable_cp;
 
         pva3 = bsu.get_uni_bspline_3d(
             order, timespan, acceptable_cp, knot_div);
@@ -140,6 +139,8 @@ namespace trajectory_server
         std::lock_guard<std::mutex> path_lock(bs_path_mutex);
         std::lock_guard<std::mutex> cmd_lock(cmd_mutex);
 
+        bs_control_points = cp;
+
         time_point<std::chrono::system_clock> now_time = 
             system_clock::now();
         bspline_server::pva_cmd pva;
@@ -170,6 +171,19 @@ namespace trajectory_server
         pva.yaw = atan2(_norm_y,_norm_x);
 
         return pva;
+    }
+
+    vector<Eigen::Vector3d> bspline_server::get_redistributed_cp_vector(
+        vector<Eigen::Vector3d> cp, double max_vel)
+    {
+        double knot_span = bsu.get_dt(
+            acceptable_cp_size, order, original_timespan);
+        
+        Eigen::Vector3d current_target_cp;
+
+
+        return ctt.uniform_distribution_of_cp(
+            current_target_cp, cp, max_vel, knot_span);
     }
 
     bool bspline_server::valid_cp_count_check(size_t cp_size)
