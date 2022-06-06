@@ -153,8 +153,7 @@ namespace trajectory_server
              * Do not have to generate the whole path again, just use the matrix to find the command
              * at that point in time
             */
-            bspline_server::pva_cmd update_get_command_by_time(
-                vector<Eigen::Vector3d> cp);
+            bspline_server::pva_cmd update_get_command_by_time();
 
             bool valid_cp_count_check(size_t cp_size);
 
@@ -166,14 +165,20 @@ namespace trajectory_server
             vector<Eigen::Vector3d> get_valid_cp_vector(vector<Eigen::Vector3d> cp);
 
             vector<Eigen::Vector3d> get_redistributed_cp_vector(
+                Eigen::Vector3d current_target_cp,
                 vector<Eigen::Vector3d> cp, double max_vel);
 
-            void update_time_span_with_knots();
+            void update_timespan_and_control_points(
+                vector<Eigen::Vector3d> control_points);
+
+            Eigen::Vector3d get_current_cp_and_overlap(
+                double additional_secs);
 
         private:
 
             std::mutex bs_path_mutex;
             std::mutex cmd_mutex;
+            std::mutex time_mutex;
 
             /** @brief Parameters for libbspline */ 
             int order, knot_div, knot_size;
@@ -182,7 +187,10 @@ namespace trajectory_server
             vector<double> timespan;
             vector<double> original_timespan;
 
+            int overlap, current_cp_idx;
+
             vector<Eigen::Vector3d> bs_control_points;
+            vector<Eigen::Vector3d> overlapping_control_points;
 
             bspline_trajectory::bs_pva_state_3d pva_state;
             bspline_server::pva_cmd pva_cmd_msg;

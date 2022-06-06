@@ -66,33 +66,82 @@ namespace trajectory_server
             Eigen::Vector3d direct_goal, current_control_point;
             Eigen::Vector3d current_pose;
 
+            vector<Eigen::Vector3d> previous_search_points;
+            vector<Eigen::Vector3d> global_search_path;
+            vector<Eigen::Vector3d> local_search_path;
+
+            vector<Eigen::Vector4d> no_fly_zone;
+
             /** @brief Start and end time span to feed into bspline */
             vector<Eigen::Vector3d> time_span; 
-            vector<Eigen::Vector3d> previous_search_points;
-            vector<Eigen::Vector4d> no_fly_zone;
-            vector<Eigen::Vector3d> control_points;
+            vector<Eigen::Vector3d> distributed_control_points;
+            vector<Eigen::Vector3d> control_points, optimized_control_points;
 
             double min_height, max_height;
             double obs_threshold;
             double search_radius;
+            double intersection_idx;
+            double max_vel;
+            double sub_runtime_error, runtime_error;
 
             std::mutex search_points_mutex;
             std::mutex control_points_mutex;
             std::mutex pose_update_mutex;
+            std::mutex cloud_mutex;
 
             bool bs_timer_started = false;
 
             std::random_device dev;
 
+            pcl::PointCloud<pcl::PointXYZ>::Ptr local_cloud;
+
         public:
-            main_server(){}
+            main_server()
+            {
+                local_cloud = pcl::PointCloud<pcl::PointXYZ>::Ptr(
+                    new pcl::PointCloud<pcl::PointXYZ>());
+            }
 
             ~main_server(){}
 
+            /** @brief Extract the direct goal for the planner that is within the search sphere */
+            void extract_direct_goal();
+
+            /** @brief Use this function wisely, since check and update may cause an infinite loop
+            * If a bad data is given to the rrt node and it cannot complete the validity check
+            */
+            void check_and_update_search(
+                pcl::PointCloud<pcl::PointXYZ>::Ptr obs,  Eigen::Vector3d first_cp);
+
+            /** @brief Construct the search path from RRT search and from its shortened path */
+            void generate_search_path(pcl::PointCloud<pcl::PointXYZ>::Ptr obs);
+
+            void complete_path_generation();
+
+            void set_local_cloud(
+                pcl::PointCloud<pcl::PointXYZ>::Ptr _local_cloud)
+            {
+                std::lock_guard<std::mutex> cloud_lock(cloud_mutex);
+
+                if (!local_cloud->empty())
+                    local_cloud->points.clear();
+                local_cloud = _local_cloud;
+            }
+
             void initialize_bspline_server(
-                int _order, double _duration_secs, double _command_interval, int _knot_div)
+                int _order, double _duration_secs, 
+                double _command_interval, int _knot_div,
+                double _max_vel)
             {
                 ts.init_bspline_server(_order, _duration_secs, _command_interval, _knot_div);
+                max_vel = _max_vel;
+            }
+
+            void initialize_rrt_server(
+                double _sub_runtime_error, double _runtime_error)
+            {
+                sub_runtime_error = _sub_runtime_error;
+                runtime_error = _runtime_error;
             }
 
             void reset_goal_points(
@@ -107,156 +156,38 @@ namespace trajectory_server
                 search_radius = search_radii;
             }
 
-            void extract_direct_goal(
-                pcl::PointCloud<pcl::PointXYZ>::Ptr obs)
+            vector<Eigen::Vector3d> get_local_control_points(double max_vel) 
             {
-                double radii;
-                // If end goal is inside the search sphere
-                if ((end - current_control_point).norm() < search_radius)
-                    radii = (end - current_control_point).norm();
-                // If end goal is outside the search sphere
-                else
-                    radii = search_radius;
-
-                // Find a RRT path that is quick and stretches to the end point
-                vector<Eigen::Vector3d> path = fe_rrt_server.find_rrt_path(
-                    previous_search_points, obs, current_control_point, end, 
-                    no_fly_zone, min_height, max_height, radii, obs_threshold);
-                // If path gives an invalid value, execute some form of emergency
-                if (path.empty())
+                std::lock_guard<std::mutex> search_points_lock(search_points_mutex);
+                local_search_path.clear();
+                for (int i = 0; i < (int)global_search_path.size(); i++)
                 {
-                    return;
-                }
-
-                // Find the intersection between any of the legs and the sphere perimeter
-                int failed_counts = 0;
-                int intersection_idx;
-                for (int i = 1; i < (int)path.size(); i++)
-                {
-                    // outside : previous_search_points[i]
-                    // inside : previous_search_points[i-1]
-                    if (inside_sphere_check(path[i-1], current_control_point, search_radius) &&
-                        !inside_sphere_check(path[i], current_control_point, search_radius))
+                    /** @brief Push back the intersection points as the final points */
+                    if (intersection_idx-1 == i)
                     {
-                        intersection_idx = i;
+                        local_search_path.push_back(direct_goal);
                         break;
                     }
-                    failed_counts++;
+                    local_search_path.push_back(previous_search_points[i]);
                 }
 
-                // We have reached the goal if failed counts is same as path size
-                if (failed_counts == path.size()-1)
-                {
-                    direct_goal = end;
-                    return;
-                }
-
-                // Calculate the direct goal point from the intersection pair
-                // Find the intersection with the sphere
-                Eigen::Vector3d vect1 = path[intersection_idx] - path[intersection_idx-1];
-                double vect1_norm = vect1.norm();
-                Eigen::Vector3d vect2 = current_control_point - path[intersection_idx-1];
-                double vect2_norm = vect2.norm();
-                double dot = vect1.x()*vect2.x() + vect1.y()*vect2.y() + vect1.z()*vect2.z();
-                double extension = dot / vect1_norm;
-                double direct_distance_from_start;
-                if (extension <= 0.00001 && extension >= -0.00001)
-                {
-                    double nearest_dist = sqrt(pow(vect2_norm,2) - pow(extension,2));
-                    double sub_distance = sqrt(pow(radii,2) - pow(nearest_dist,2)); 
-                    direct_distance_from_start = sub_distance + extension;
-                }
-                else
-                {
-                    direct_distance_from_start = sqrt(pow(radii,2) - pow(extension,2)); 
-                }
-
-                direct_goal = direct_distance_from_start * (vect1 / vect1_norm);
-                return;
+                return ts.get_redistributed_cp_vector(
+                    current_control_point,
+                    local_search_path, max_vel);
             }
 
-            void check_and_update_search(
-                pcl::PointCloud<pcl::PointXYZ>::Ptr obs)
+            bspline_server::pva_cmd update_distributed_cp(double max_vel) 
             {
-                std::lock_guard<std::mutex> pose_lock(pose_update_mutex);
-                std::lock_guard<std::mutex> search_points_lock(search_points_mutex);
-
-                if (previous_search_points.empty())
-                    return;
-
-                int last_safe_idx = -1;
-                int initial_size = (int)previous_search_points.size();
-                for (int i = 1; i < initial_size; i++)
-                {
-                    if (!ru.check_line_validity_with_pcl(
-                        previous_search_points[i], previous_search_points[i-1], obs_threshold, obs))
-                    {
-                        last_safe_idx = i-1;
-                        break;
-                    }
-                }
-
-                if (last_safe_idx >= 0)
-                {
-                    for (int i = last_safe_idx + 1; i < initial_size; i++)
-                        previous_search_points.erase(previous_search_points.end());
-                }
-
-                int new_size = (int)previous_search_points.size();
-                double nearest_distance = DBL_MAX;
-                int idx = -1; 
-                for (int i = 0; i < new_size; i++)
-                {
-                    double distance = (previous_search_points[i]-current_pose).norm();
-                    if (distance < nearest_distance)
-                    {
-                        nearest_distance = distance;
-                        idx = i;
-                    }
-                }
-
-                for (int i = idx-1; i >= 0; i--)
-                    previous_search_points.erase(previous_search_points.begin());
-            }
-
-
-            void generate_search_path(
-                pcl::PointCloud<pcl::PointXYZ>::Ptr obs_pcl)
-            {
-                // check previous search points and create an updated one
-                // We moved forward, so find the closes point from current pose
-                check_and_update_search(obs_pcl);
-
-                vector<Eigen::Vector3d> path = fe_rrt_server.find_rrt_path(
-                    previous_search_points, obs_pcl, current_control_point, direct_goal, 
-                    no_fly_zone, min_height, max_height, search_radius / 2, obs_threshold);
-
-                std::lock_guard<std::mutex> search_points_lock(search_points_mutex);
-                if (path.empty())
-                    return;
-                
-                previous_search_points.clear();
-                previous_search_points = path;
-
-                return;
-            }
-
-            vector<Eigen::Vector3d> get_control_points_bs(double max_vel) 
-            {
-                std::lock_guard<std::mutex> search_points_lock(search_points_mutex);
-
-                return ts.get_redistributed_cp_vector(previous_search_points, max_vel);
+                distributed_control_points.clear();
+                distributed_control_points = get_local_control_points(max_vel);
             }
 
             bspline_server::pva_cmd update_bs_path_get_command(double max_vel) 
             {
                 trajectory_server::bspline_server::pva_cmd cmd_by_time;
 
-                vector<Eigen::Vector3d> distributed_cp =
-                    get_control_points_bs(max_vel);
-
                 vector<Eigen::Vector3d> acceptable_cp =
-                    ts.get_valid_cp_vector(distributed_cp);
+                    ts.get_valid_cp_vector(distributed_control_points);
 
                 return cmd_by_time;
             }
@@ -279,6 +210,11 @@ namespace trajectory_server
                     return true;
                 else 
                     return false;
+            }
+
+            vector<Eigen::Vector3d> get_distributed_control_points()
+            {
+                return distributed_control_points;
             }
     };
 

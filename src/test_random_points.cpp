@@ -86,7 +86,7 @@ int main()
             ts.get_valid_cp_vector(random_cp);
         
         double test_command_time = ts.get_duration_from_start_time();
-        cmd_by_time = ts.update_get_command_by_time(acceptable_cp);
+        cmd_by_time = ts.update_get_command_by_time();
         
         double test_command_idx = ts.get_duration_from_start_time();
         cmd_by_idx = ts.update_get_command_on_path_by_idx();
