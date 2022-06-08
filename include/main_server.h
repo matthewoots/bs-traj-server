@@ -116,8 +116,13 @@ namespace trajectory_server
             /** @brief Construct the search path from RRT search and from its shortened path */
             void generate_search_path(pcl::PointCloud<pcl::PointXYZ>::Ptr obs);
 
+            /** @brief Get the local control points from the RRT module (via distribution) */
+            vector<Eigen::Vector3d> get_local_control_points(double max_vel);
+
+            /** @brief Run the whole algorithm to acquire the control points */
             void complete_path_generation();
 
+            /** @brief Update the local cloud data */
             void set_local_cloud(
                 pcl::PointCloud<pcl::PointXYZ>::Ptr _local_cloud)
             {
@@ -128,6 +133,7 @@ namespace trajectory_server
                 local_cloud = _local_cloud;
             }
 
+            /** @brief Initialize the Bspline server */
             void initialize_bspline_server(
                 int _order, double _duration_secs, 
                 double _command_interval, int _knot_div,
@@ -137,6 +143,7 @@ namespace trajectory_server
                 max_vel = _max_vel;
             }
 
+            /** @brief Initialize the RRT server */
             void initialize_rrt_server(
                 double _sub_runtime_error, double _runtime_error)
             {
@@ -144,6 +151,7 @@ namespace trajectory_server
                 runtime_error = _runtime_error;
             }
 
+            /** @brief Restart and reinitialize the start and end goals */
             void reset_goal_points(
                 Eigen::Vector3d s, Eigen::Vector3d e, 
                 double protected_zone, double search_radii)
@@ -156,42 +164,37 @@ namespace trajectory_server
                 search_radius = search_radii;
             }
 
-            vector<Eigen::Vector3d> get_local_control_points(double max_vel) 
-            {
-                std::lock_guard<std::mutex> search_points_lock(search_points_mutex);
-                local_search_path.clear();
-                for (int i = 0; i < (int)global_search_path.size(); i++)
-                {
-                    /** @brief Push back the intersection points as the final points */
-                    if (intersection_idx-1 == i)
-                    {
-                        local_search_path.push_back(direct_goal);
-                        break;
-                    }
-                    local_search_path.push_back(previous_search_points[i]);
-                }
-
-                return ts.get_redistributed_cp_vector(
-                    current_control_point,
-                    local_search_path, max_vel);
-            }
-
-            bspline_server::pva_cmd update_distributed_cp(double max_vel) 
+            /** @brief Find and update with newly found distributed control points */
+            void update_distributed_cp(double max_vel) 
             {
                 distributed_control_points.clear();
                 distributed_control_points = get_local_control_points(max_vel);
             }
 
+            /** @brief Concatenate the control points (overlapping + distributed points) */
+            vector<Eigen::Vector3d> concatenate_distributed_cp()
+            {
+                vector<Eigen::Vector3d> new_cp_vector;
+
+                new_cp_vector = ts.get_overlapping_cp();
+                for (int i = 0; i < distributed_control_points.size(); i++)
+                    new_cp_vector.push_back(distributed_control_points[i]);
+                
+                return new_cp_vector;
+            }
+
+            /** @brief Get the command from the Bspline */
             bspline_server::pva_cmd update_bs_path_get_command(double max_vel) 
             {
                 trajectory_server::bspline_server::pva_cmd cmd_by_time;
-
+                cmd_by_time = ts.update_get_command_by_time();
                 vector<Eigen::Vector3d> acceptable_cp =
                     ts.get_valid_cp_vector(distributed_control_points);
 
                 return cmd_by_time;
             }
 
+            /** @brief Check whether the point is inside the sphere */
             bool inside_sphere_check(Eigen::Vector3d point, 
                 Eigen::Vector3d sphere_center, double radii)
             {
@@ -212,9 +215,16 @@ namespace trajectory_server
                     return false;
             }
 
+            /** @brief Return the distributed control points */
             vector<Eigen::Vector3d> get_distributed_control_points()
             {
                 return distributed_control_points;
+            }
+
+            /** @brief Start the Bspline timer */
+            void start_module_timer()
+            {
+                ts.start_bspline_time();
             }
     };
 

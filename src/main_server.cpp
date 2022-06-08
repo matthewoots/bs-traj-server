@@ -29,6 +29,7 @@
 
 namespace trajectory_server
 {
+    /** @brief Extract the direct goal for the planner that is within the search sphere */
     void main_server::extract_direct_goal()
     {
         double radii;
@@ -115,6 +116,9 @@ namespace trajectory_server
         return;
     }
 
+    /** @brief Use this function wisely, since check and update may cause an infinite loop
+    * If a bad data is given to the rrt node and it cannot complete the validity check
+    */
     void main_server::check_and_update_search(
         pcl::PointCloud<pcl::PointXYZ>::Ptr obs,  Eigen::Vector3d first_cp)
     {
@@ -163,6 +167,7 @@ namespace trajectory_server
             KGRN << previous_search_points.size() << KNRM << std::endl;
     }
 
+    /** @brief Construct the search path from RRT search and from its shortened path */
     void main_server::generate_search_path(
         pcl::PointCloud<pcl::PointXYZ>::Ptr obs)
     {
@@ -184,7 +189,29 @@ namespace trajectory_server
         global_search_path.clear();
         global_search_path = path;
     }
+
+    /** @brief Get the local control points from the RRT module (via distribution) */
+    vector<Eigen::Vector3d> main_server::get_local_control_points(double max_vel) 
+    {
+        std::lock_guard<std::mutex> search_points_lock(search_points_mutex);
+        local_search_path.clear();
+        for (int i = 0; i < (int)global_search_path.size(); i++)
+        {
+            /** @brief Push back the intersection points as the final points */
+            if (intersection_idx-1 == i)
+            {
+                local_search_path.push_back(direct_goal);
+                break;
+            }
+            local_search_path.push_back(previous_search_points[i]);
+        }
+
+        return ts.get_redistributed_cp_vector(
+            current_control_point,
+            local_search_path, max_vel);
+    }
     
+    /** @brief Run the whole algorithm to acquire the control points */
     void main_server::complete_path_generation()
     {
         std::lock_guard<std::mutex> cloud_lock(cloud_mutex);
@@ -195,6 +222,8 @@ namespace trajectory_server
         // (optimized_control_points)
 
         // get_current_control_point 
+        current_control_point = 
+            ts.get_current_cp_and_overlap(0.3);
 
         fe_rrt_server.reset_parameters(
             vector<Eigen::Vector4d>(),
@@ -238,14 +267,17 @@ namespace trajectory_server
 
         // Add the distributed control points and add the past order number of 
         // control points from the previous iteration
-        vector<Eigen::Vector3d> altered_distributed_cp;
+        vector<Eigen::Vector3d> altered_distributed_cp =
+            concatenate_distributed_cp();
         
         // Update the [timespan] in trajectory_server node, extending it relative
         // to our queried control point
 
         vector<Eigen::Vector3d> acceptable_cp =
-            ts.get_valid_cp_vector(distributed_control_points);
+            ts.get_valid_cp_vector(altered_distributed_cp);
         
         optimized_control_points = acceptable_cp;
+
+        ts.update_timespan_and_control_points(optimized_control_points);
     }
 }

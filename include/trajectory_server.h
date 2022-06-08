@@ -88,50 +88,6 @@ namespace trajectory_server
             common_trajectory_tool ctt;
         
             bspline_server(){}
-
-            void init_bspline_server(
-                int _order, double _duration_secs, double _command_interval, int _knot_div) 
-            {
-                tu.test_chronos();
-                command_interval = _command_interval;
-                knot_div = _knot_div;
-                order = _order;
-
-                // Re-adjust duration so that our knots and divisions are matching
-                duration_secs = bsu.get_corrected_duration(
-                    command_interval, _duration_secs);
-
-                knot_size = bsu.get_knots_size(
-                    command_interval, duration_secs, knot_div);
-
-                knot_interval = duration_secs / knot_size;
-
-                vector<Eigen::Vector3d> initialization_cp;
-                for (int i = 0; i < 100; i++)
-                    initialization_cp.push_back(Eigen::Vector3d::Zero());
-                
-                vector<Eigen::Vector3d> acceptable_cp = 
-                    get_valid_cp_vector(initialization_cp);
-                acceptable_cp_size = (int)acceptable_cp.size();
-
-                stime = std::chrono::system_clock::now();
-
-                // convert duration from secs to milliseconds
-                long int duration_msecs = (long int)(_duration_secs * 1000);
-                // initialize the very first pair of time span (start and end)
-                time_span_chronos.clear();
-                time_span_chronos.push_back(stime);
-                time_span_chronos.push_back(
-                    stime + milliseconds(duration_msecs)); // from the alias std::chrono::seconds
-                
-                timespan.clear();
-                timespan.push_back(0.0);
-                timespan.push_back(duration<double>(time_span_chronos[1] - time_span_chronos[0]).count());
-            
-                original_timespan.clear();
-                original_timespan.push_back(0.0);
-                original_timespan.push_back(duration<double>(time_span_chronos[1] - time_span_chronos[0]).count());
-            }
             
             ~bspline_server() 
             {
@@ -139,40 +95,88 @@ namespace trajectory_server
                     KRED << " close bs_server" << KNRM << std::endl;
             }
 
-            bspline_trajectory::bs_pva_state_3d get_bs_path(
-                vector<Eigen::Vector3d> cp);
+            /** @brief Initialize the parameters for the Bspline server
+             * without starting the timer
+            **/
+            void init_bspline_server(
+                int _order, double _duration_secs, double _command_interval, int _knot_div);
+
+
+            /** @brief Start the Bspline timer and saves the start time **/
+            void start_bspline_time();
+
             
-            /** @brief update_get_command_on_path_by_idx and update_bs_path
-             * These 2 functions comes together, this is because update_bs_path have to generate
+            /** @brief Get the corrected control points that fits the knot span
+             * @param cp raw control point data that has not yet been cropped to the
+             * acceptable size
+            **/
+            vector<Eigen::Vector3d> get_valid_cp_vector(vector<Eigen::Vector3d> cp);
+
+
+            /** @brief get_bs_path, update_get_command_on_path_by_idx and update_bs_path
+             * These 3 functions comes together, this is because update_bs_path have to generate
              * the bspline path and the command functions has to search for the idx
             */
+            bspline_trajectory::bs_pva_state_3d get_bs_path(
+                vector<Eigen::Vector3d> cp);
             void update_bs_path(vector<Eigen::Vector3d> cp);
             bspline_server::pva_cmd update_get_command_on_path_by_idx();
-            
+
+
             /** @brief update_get_command_on_path_by_time
              * Do not have to generate the whole path again, just use the matrix to find the command
              * at that point in time
             */
             bspline_server::pva_cmd update_get_command_by_time();
 
-            bool valid_cp_count_check(size_t cp_size);
 
-            double get_running_time();
-
-            double get_duration_from_start_time(){
-                return duration<double>(system_clock::now() - stime).count();}
-
-            vector<Eigen::Vector3d> get_valid_cp_vector(vector<Eigen::Vector3d> cp);
-
+            /** @brief Get the uniform distributed control point vector from 
+             * RRT points and the maximum velocity **/
             vector<Eigen::Vector3d> get_redistributed_cp_vector(
                 Eigen::Vector3d current_target_cp,
                 vector<Eigen::Vector3d> cp, double max_vel);
 
+
+            /** @brief After optimization or redistribution, update with the Bspline 
+             * control points that are found, and update the next timespan that will be used 
+            **/
             void update_timespan_and_control_points(
                 vector<Eigen::Vector3d> control_points);
 
+
+            /** @brief Return the query control point and update the overlap control 
+             * point vectors **/
             Eigen::Vector3d get_current_cp_and_overlap(
                 double additional_secs);
+
+
+            bool valid_cp_count_check(size_t cp_size)
+            {
+                return ((int)cp_size > (knot_size + order));
+            }
+
+            double get_running_time()
+            {
+                time_point<std::chrono::system_clock> now = system_clock::now();
+                return duration<double>(now - stime).count();
+            }
+
+            double get_duration_from_start_time()
+            {
+                return duration<double>(system_clock::now() - stime).count();
+            }
+            
+            vector<Eigen::Vector3d> get_overlapping_cp()
+            {
+                return overlapping_control_points;
+            }
+
+            void update_control_points(
+                vector<Eigen::Vector3d> control_points)
+            {
+                std::lock_guard<std::mutex> path_lock(bs_path_mutex);
+                bs_control_points = control_points;
+            }
 
         private:
 

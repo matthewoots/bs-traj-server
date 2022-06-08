@@ -26,11 +26,6 @@ add_executable(${PROJECT_NAME}_test_random_point_node
     src/trajectory_server.cpp
 )
 
-add_executable(${PROJECT_NAME}_test_concatenate_node 
-    src/test_concatenate.cpp
-    src/trajectory_server.cpp
-)
-
 add_executable(${PROJECT_NAME}_test_rrt_bspline_node
     src/test_rrt_bspline_pipeline
     src/trajectory_server.cpp
@@ -49,4 +44,5 @@ target_link_libraries(${PROJECT_NAME}_test_optimization_node
 add_library(${PROJECT_NAME} STATIC ${SRC_FILES} ${INCLUDE_FILES})
 target_include_directories (${PROJECT_NAME} PUBLIC 
     ${PROJECT_SOURCE_DIR} 
-    ${PROJECT_SOURCE_DIR}/include)
+    ${PROJECT_SOURCE_DIR}/include
+    librrtserver)

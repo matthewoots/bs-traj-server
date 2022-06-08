@@ -29,6 +29,55 @@
 
 namespace trajectory_server
 {
+    /** @brief Initialize the parameters for the Bspline server
+     * without starting the timer
+    **/
+    void bspline_server::init_bspline_server(
+        int _order, double _duration_secs, double _command_interval, int _knot_div) 
+    {
+        tu.test_chronos();
+        command_interval = _command_interval;
+        knot_div = _knot_div;
+        order = _order;
+
+        // Re-adjust duration so that our knots and divisions are matching
+        duration_secs = bsu.get_corrected_duration(
+            command_interval, _duration_secs);
+
+        knot_size = bsu.get_knots_size(
+            command_interval, duration_secs, knot_div);
+
+        knot_interval = duration_secs / knot_size;
+
+        acceptable_cp_size = knot_size + order;
+    }
+
+    /** @brief Start the Bspline timer and saves the start time **/
+    void bspline_server::start_bspline_time() 
+    {
+        stime = std::chrono::system_clock::now();
+
+        // convert duration from secs to milliseconds
+        long int duration_msecs = (long int)(duration_secs * 1000);
+        // initialize the very first pair of time span (start and end)
+        time_span_chronos.clear();
+        time_span_chronos.push_back(stime);
+        time_span_chronos.push_back(
+            stime + milliseconds(duration_msecs)); // from the alias std::chrono::seconds
+        
+        timespan.clear();
+        timespan.push_back(0.0);
+        timespan.push_back(duration<double>(time_span_chronos[1] - time_span_chronos[0]).count());
+    
+        original_timespan.clear();
+        original_timespan.push_back(0.0);
+        original_timespan.push_back(duration<double>(time_span_chronos[1] - time_span_chronos[0]).count());
+    }
+
+    /** @brief Get the corrected control points that fits the knot span
+     * @param cp raw control point data that has not yet been cropped to the
+     * acceptable size
+    **/
     vector<Eigen::Vector3d> bspline_server::get_valid_cp_vector(vector<Eigen::Vector3d> cp)
     {        
         std::cout << "[tserver]" <<
@@ -42,7 +91,138 @@ namespace trajectory_server
             
         return acceptable_cp;
     }
+    
 
+    bspline_server::pva_cmd bspline_server::update_get_command_by_time()
+    {
+        std::lock_guard<std::mutex> path_lock(bs_path_mutex);
+        std::lock_guard<std::mutex> cmd_lock(cmd_mutex);
+        std::lock_guard<std::mutex> time_lock(time_mutex);
+
+        // Bspline is updated before we reach here;
+        // bs_control_points = cp;
+
+        time_point<std::chrono::system_clock> now_time = 
+            system_clock::now();
+        bspline_server::pva_cmd pva;
+
+        double rel_now_time = duration<double>(now_time - stime).count();
+        if ((timespan[1] - rel_now_time) < 0)
+        {
+            pva.t = -1.0;
+            return pva;
+        }
+
+        bspline_trajectory::bs_pva_state_3d pva3;
+        pva3 = bsu.get_single_bspline_3d(
+            order, timespan, bs_control_points, rel_now_time);
+
+        pva.p = pva3.pos[0];
+        pva.t = rel_now_time;
+        
+        // if (!pva3.vel.empty())
+        pva.v = pva3.vel[0];
+        double _norm = sqrt(pow(pva.v.x(),2) + pow(pva.v.y(),2));
+        double _norm_x = pva.v.x() / _norm;
+        double _norm_y = pva.v.y() / _norm;
+
+        if (!pva3.acc.empty())
+            pva.a = pva3.acc[0];
+        
+        pva.yaw = atan2(_norm_y,_norm_x);
+
+        return pva;
+    }
+
+    /** @brief Get the uniform distributed control point vector from 
+     * RRT points and the maximum velocity **/
+    vector<Eigen::Vector3d> bspline_server::get_redistributed_cp_vector(
+        Eigen::Vector3d current_target_cp,
+        vector<Eigen::Vector3d> cp, double max_vel)
+    {
+        double knot_span = bsu.get_dt(
+            acceptable_cp_size, order, original_timespan);
+        
+        return ctt.uniform_distribution_of_cp(
+            current_target_cp, cp, max_vel, knot_span);
+    }
+    
+    /** @brief After optimization or redistribution, update with the Bspline 
+     * control points that are found, and update the next timespan that will be used 
+    **/
+    void bspline_server::update_timespan_and_control_points(
+        vector<Eigen::Vector3d> control_points)
+    {
+        std::lock_guard<std::mutex> time_lock(time_mutex);
+
+        vector<double> previous_timespan = timespan;
+
+        timespan.clear();
+
+        // [MATLAB] overlap = 2;
+        // [MATLAB] cp_used = order + 2;
+        // [MATLAB] timespan2 = [timespan1(1) + (cp_used-order) * dt, 
+        // timespan1(2) + (cp_used-order) * dt];
+        timespan.push_back(
+            previous_timespan[0] + (current_cp_idx-order) * knot_interval);
+        timespan.push_back(
+            previous_timespan[1] + (current_cp_idx-order) * knot_interval);
+    
+        std::lock_guard<std::mutex> path_lock(bs_path_mutex);
+        
+        bs_control_points.clear();
+        bs_control_points = control_points;
+    }
+
+    /** @brief Return the query control point and update the overlap control 
+     * point vectors **/
+    Eigen::Vector3d bspline_server::get_current_cp_and_overlap(
+        double additional_secs)
+    {
+        // [MATLAB] overlap = 0;
+        // [MATLAB] cp_used = order + 2;
+        // [MATLAB] timespan2 = [timespan1(1) + (cp_used-order) * dt, timespan1(2) + (cp_used-order) * dt];
+        // [MATLAB] % overlap_size = length(ctrlpt1) - (overlap-order);
+        // [MATLAB] for x=1:axis
+        // [MATLAB]     r = rand(1,(points+order)-order-overlap);
+        // [MATLAB]     ctrlpt2(x,:) = numrange * r; % multiply the random [0-1] by the number range
+        // [MATLAB] end
+
+        // [MATLAB] ctrlpt2 = [ctrlpt1(:,cp_used-order+1:cp_used+overlap) ctrlpt2];
+    
+        double running_time = get_running_time();
+
+        int current_cp_idx = -1;
+        for (int i = 0; i <= knot_size; i++)
+        {
+            double time_at_knot = timespan[0] + i * knot_interval;
+            if (time_at_knot - running_time < 0)
+            {
+                current_cp_idx = i;
+                break;
+            }
+        }
+
+        int overlap = (int)ceil(additional_secs / knot_interval);
+        
+        int size_of_overlapping_cp = (current_cp_idx+overlap) - (current_cp_idx-order+1); 
+
+        overlapping_control_points.clear();
+        for (int i = 0; i < size_of_overlapping_cp; i++)
+        {
+            overlapping_control_points.push_back(
+                bs_control_points[current_cp_idx-order+i]);
+        }
+
+        return bs_control_points[current_cp_idx];
+    }
+
+    /** @brief Outdated code **/
+    /** @brief For getting index rather than getting by time
+     * update_get_command_on_path_by_idx and update_bs_path
+     * These 3 functions comes together, this is because update_bs_path have to generate
+     * the bspline path and the command functions has to search for the idx
+    */
     bspline_trajectory::bs_pva_state_3d bspline_server::get_bs_path(
         vector<Eigen::Vector3d> cp)
     {
@@ -62,6 +242,12 @@ namespace trajectory_server
         return pva3;
     }
 
+    /** @brief Outdated code **/
+    /** @brief For getting index rather than getting by time
+     * update_get_command_on_path_by_idx and update_bs_path
+     * These 3 functions comes together, this is because update_bs_path have to generate
+     * the bspline path and the command functions has to search for the idx
+    */
     void bspline_server::update_bs_path(vector<Eigen::Vector3d> cp)
     {
         std::lock_guard<std::mutex> path_lock(bs_path_mutex);
@@ -71,7 +257,13 @@ namespace trajectory_server
         pva_state = bspline_server::get_bs_path(cp);
     
     }
-    
+
+    /** @brief Outdated code **/
+    /** @brief For getting index rather than getting by time
+     * update_get_command_on_path_by_idx and update_bs_path
+     * These 3 functions comes together, this is because update_bs_path have to generate
+     * the bspline path and the command functions has to search for the idx
+    */
     bspline_server::pva_cmd bspline_server::update_get_command_on_path_by_idx()
     {
         std::lock_guard<std::mutex> path_lock(bs_path_mutex);
@@ -131,128 +323,5 @@ namespace trajectory_server
         }
 
         return pva;
-    }
-
-    bspline_server::pva_cmd bspline_server::update_get_command_by_time()
-    {
-        std::lock_guard<std::mutex> path_lock(bs_path_mutex);
-        std::lock_guard<std::mutex> cmd_lock(cmd_mutex);
-        std::lock_guard<std::mutex> time_lock(time_mutex);
-
-        // Bspline is updated before we reach here;
-        // bs_control_points = cp;
-
-        time_point<std::chrono::system_clock> now_time = 
-            system_clock::now();
-        bspline_server::pva_cmd pva;
-
-        double rel_now_time = duration<double>(now_time - stime).count();
-        if ((timespan[1] - rel_now_time) < 0)
-        {
-            pva.t = -1.0;
-            return pva;
-        }
-
-        bspline_trajectory::bs_pva_state_3d pva3;
-        pva3 = bsu.get_single_bspline_3d(
-            order, timespan, bs_control_points, rel_now_time);
-
-        pva.p = pva3.pos[0];
-        pva.t = rel_now_time;
-        
-        // if (!pva3.vel.empty())
-        pva.v = pva3.vel[0];
-        double _norm = sqrt(pow(pva.v.x(),2) + pow(pva.v.y(),2));
-        double _norm_x = pva.v.x() / _norm;
-        double _norm_y = pva.v.y() / _norm;
-
-        if (!pva3.acc.empty())
-            pva.a = pva3.acc[0];
-        
-        pva.yaw = atan2(_norm_y,_norm_x);
-
-        return pva;
-    }
-
-    vector<Eigen::Vector3d> bspline_server::get_redistributed_cp_vector(
-        Eigen::Vector3d current_target_cp,
-        vector<Eigen::Vector3d> cp, double max_vel)
-    {
-        double knot_span = bsu.get_dt(
-            acceptable_cp_size, order, original_timespan);
-        
-        return ctt.uniform_distribution_of_cp(
-            current_target_cp, cp, max_vel, knot_span);
-    }
-
-    bool bspline_server::valid_cp_count_check(size_t cp_size)
-    {
-        return ((int)cp_size > (knot_size + order));
-    }
-
-    double bspline_server::get_running_time()
-    {
-        time_point<std::chrono::system_clock> now = system_clock::now();
-        return duration<double>(now - stime).count();
-    }
-    
-    void bspline_server::update_timespan_and_control_points(
-        vector<Eigen::Vector3d> control_points)
-    {
-        std::lock_guard<std::mutex> time_lock(time_mutex);
-
-        vector<double> previous_timespan = timespan;
-
-        timespan.clear();
-
-        // [MATLAB] overlap = 2;
-        // [MATLAB] cp_used = order + 2;
-        // [MATLAB] timespan2 = [timespan1(1) + (cp_used-order) * dt, 
-        // timespan1(2) + (cp_used-order) * dt];
-        timespan.push_back(
-            previous_timespan[0] + (current_cp_idx-order) * knot_interval);
-        timespan.push_back(
-            previous_timespan[1] + (current_cp_idx-order) * knot_interval);
-    }
-
-    Eigen::Vector3d bspline_server::get_current_cp_and_overlap(
-        double additional_secs)
-    {
-        // [MATLAB] overlap = 0;
-        // [MATLAB] cp_used = order + 2;
-        // [MATLAB] timespan2 = [timespan1(1) + (cp_used-order) * dt, timespan1(2) + (cp_used-order) * dt];
-        // [MATLAB] % overlap_size = length(ctrlpt1) - (overlap-order);
-        // [MATLAB] for x=1:axis
-        // [MATLAB]     r = rand(1,(points+order)-order-overlap);
-        // [MATLAB]     ctrlpt2(x,:) = numrange * r; % multiply the random [0-1] by the number range
-        // [MATLAB] end
-
-        // [MATLAB] ctrlpt2 = [ctrlpt1(:,cp_used-order+1:cp_used+overlap) ctrlpt2];
-    
-        double running_time = get_running_time();
-
-        int current_cp_idx = -1;
-        for (int i = 0; i <= knot_size; i++)
-        {
-            double time_at_knot = timespan[0] + i * knot_interval;
-            if (time_at_knot - running_time < 0)
-            {
-                current_cp_idx = i;
-                break;
-            }
-        }
-
-        int overlap = (int)ceil(additional_secs / knot_interval);
-        
-        int size_of_overlapping_cp = (current_cp_idx+overlap) - (current_cp_idx-order+1); 
-
-        overlapping_control_points.clear();
-        for (int i = 0; i < size_of_overlapping_cp; i++)
-        {
-            overlapping_control_points.push_back(
-                bs_control_points[current_cp_idx-order+i]);
-        }
-
-        return bs_control_points[current_cp_idx];
     }
 }

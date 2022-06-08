@@ -72,7 +72,8 @@ int main()
         tu.print_time(test_cycle_start, 
             "test (" + std::to_string(i) + ") runtime:");
 
-
+        ts.start_bspline_time();
+        
         std::this_thread::sleep_for(std::chrono::milliseconds(2000));
         double displaced_time = ts.get_duration_from_start_time();
         // Print out the time taken for the displacement
@@ -84,6 +85,7 @@ int main()
         ts.update_bs_path(random_cp);
         vector<Eigen::Vector3d> acceptable_cp =
             ts.get_valid_cp_vector(random_cp);
+        ts.update_control_points(acceptable_cp);
         
         double test_command_time = ts.get_duration_from_start_time();
         cmd_by_time = ts.update_get_command_by_time();
@@ -95,12 +97,14 @@ int main()
         std::cout << "update_get_command_on_path_by_idx: \n" << 
             KBLU << cmd_by_idx.p << KNRM << std::endl <<
             "cmd_time: " << cmd_by_idx.t << std::endl <<
-            "cmd_difference: " << cmd_by_idx.t - test_command_idx << std::endl;
+            "cmd_difference: " << (cmd_by_idx.t - test_command_idx) * 1000 <<
+            "ms" << std::endl;
         // Print out the output for update_get_command_by_time
         std::cout << "update_get_command_by_time: \n" << 
             KBLU << cmd_by_time.p << KNRM << std::endl <<
             "cmd_time: " << cmd_by_time.t << std::endl <<
-            "cmd_difference: " << cmd_by_time.t - test_command_time << std::endl;
+            "cmd_difference: " << (cmd_by_time.t - test_command_time) * 1000 <<
+            "ms" << std::endl;
 
         std::cout << "\n";
     }     
