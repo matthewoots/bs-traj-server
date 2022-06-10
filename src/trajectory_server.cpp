@@ -50,6 +50,11 @@ namespace trajectory_server
         knot_interval = duration_secs / knot_size;
 
         acceptable_cp_size = knot_size + order;
+        std::cout << "[tserver]" <<
+            " acceptable control_point " << KGRN << 
+            acceptable_cp_size << KNRM << " knot_size " << KGRN <<
+            knot_size << KNRM << " knot_interval " << KGRN <<
+            knot_interval << KNRM << std::endl;
     }
 
     /** @brief Start the Bspline timer and saves the start time **/
@@ -86,8 +91,17 @@ namespace trajectory_server
         
         // Crop the control points to what can be given to the bspline
         vector<Eigen::Vector3d> acceptable_cp;
-        for (int i = 0; i < acceptable_cp_size; i++)
-            acceptable_cp.push_back(cp[i]);
+        // If the control point size is bigger, crop to make it smaller
+        if (cp.size() > acceptable_cp_size)
+            for (int i = 0; i < acceptable_cp_size; i++)
+                acceptable_cp.push_back(cp[i]);
+
+        // If the control point size is smaller, we have to change the duration_secs
+        else
+        {
+            acceptable_cp = cp;
+            duration_secs = (cp.size() - order) * knot_interval;
+        }
             
         return acceptable_cp;
     }
@@ -140,8 +154,19 @@ namespace trajectory_server
         Eigen::Vector3d current_target_cp,
         vector<Eigen::Vector3d> cp, double max_vel)
     {
+        vector<double> temp_time_span;
+        if (original_timespan.empty())
+        {
+            temp_time_span.push_back(0.0);
+            temp_time_span.push_back(duration_secs);
+        }
+        else
+            temp_time_span = original_timespan;
+        
         double knot_span = bsu.get_dt(
-            acceptable_cp_size, order, original_timespan);
+            acceptable_cp_size, order, temp_time_span);
+        std::cout << "[bspline_server] get_redistributed_cp_vector knot_span: " <<
+            KBLU << knot_span << KNRM << std::endl;
         
         return ctt.uniform_distribution_of_cp(
             current_target_cp, cp, max_vel, knot_span);
@@ -155,9 +180,30 @@ namespace trajectory_server
     {
         std::lock_guard<std::mutex> time_lock(time_mutex);
 
-        vector<double> previous_timespan = timespan;
+        vector<double> previous_timespan;
+        if (!timespan.empty()) 
+            previous_timespan = timespan;
+        else
+        {
+            previous_timespan.push_back(0.0);
+            previous_timespan.push_back(duration_secs);
+
+            std::lock_guard<std::mutex> path_lock(bs_path_mutex);
+        
+            bs_control_points.clear();
+            bs_control_points = control_points;
+            for (int i = 0; i < bs_control_points.size(); i++)
+                std::cout << "[main_server] bs_control_points : " << KRED << 
+                    bs_control_points[i].transpose() << KNRM << std::endl;
+            return;
+        }
 
         timespan.clear();
+        double end_time_offset = 0.0;
+        if (duration_secs < previous_timespan[1]-previous_timespan[0])
+            end_time_offset = 
+                (previous_timespan[1]-previous_timespan[0]) - duration_secs;
+
 
         // [MATLAB] overlap = 2;
         // [MATLAB] cp_used = order + 2;
@@ -166,7 +212,8 @@ namespace trajectory_server
         timespan.push_back(
             previous_timespan[0] + (current_cp_idx-order) * knot_interval);
         timespan.push_back(
-            previous_timespan[1] + (current_cp_idx-order) * knot_interval);
+            previous_timespan[1] - end_time_offset 
+            + (current_cp_idx-order) * knot_interval);
     
         std::lock_guard<std::mutex> path_lock(bs_path_mutex);
         
@@ -191,27 +238,50 @@ namespace trajectory_server
         // [MATLAB] ctrlpt2 = [ctrlpt1(:,cp_used-order+1:cp_used+overlap) ctrlpt2];
     
         double running_time = get_running_time();
+        std::cout << "[bspline_server] running_time for current_cp: " 
+            << KBLU << running_time << KNRM << "s" << std::endl;
 
         int current_cp_idx = -1;
+        Eigen::Vector3d nan_vector = Eigen::Vector3d(
+            std::numeric_limits<double>::quiet_NaN(), 
+            std::numeric_limits<double>::quiet_NaN(), 
+            std::numeric_limits<double>::quiet_NaN());
+        
+        if (timespan.empty())
+            return nan_vector;
+            
         for (int i = 0; i <= knot_size; i++)
         {
             double time_at_knot = timespan[0] + i * knot_interval;
-            if (time_at_knot - running_time < 0)
+            
+            if (running_time - time_at_knot <= 0)
             {
                 current_cp_idx = i;
+                std::cout << "[bspline_server] idx: " <<
+                    KBLU << current_cp_idx << KNRM << " time_at_knot: " <<
+                    KBLU << time_at_knot << KNRM << "s" << std::endl;
                 break;
             }
         }
 
+        if (current_cp_idx - order + 0 < 0)
+            return nan_vector;
+
+        if (current_cp_idx < 0)
+            return nan_vector;
+
         int overlap = (int)ceil(additional_secs / knot_interval);
         
-        int size_of_overlapping_cp = (current_cp_idx+overlap) - (current_cp_idx-order+1); 
+        int size_of_overlapping_cp = (current_cp_idx + overlap) - (current_cp_idx-order+1); 
 
         overlapping_control_points.clear();
         for (int i = 0; i < size_of_overlapping_cp; i++)
         {
             overlapping_control_points.push_back(
-                bs_control_points[current_cp_idx-order+i]);
+                bs_control_points[current_cp_idx - order + i]);
+            std::cout << "[main_server] " << KCYN <<
+                current_cp_idx - order + i << KNRM << " bs_control_points : " << KCYN << 
+                bs_control_points[current_cp_idx - order + i].transpose() << KNRM << std::endl;
         }
 
         return bs_control_points[current_cp_idx];

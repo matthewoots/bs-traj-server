@@ -30,16 +30,15 @@
 
 int main()
 {
+    // start our trajectory server
+    // bspline_server(int _order, double _duration_secs, double _command_interval) 
+    // 25Hz publish rate for command
+    trajectory_server::bspline_server ts;
     trajectory_server::test_utils tu;
 
     std::random_device dev;
     std::mt19937 generator(dev());
     std::uniform_real_distribution<double> dis(0.0, 1.0);
-
-    // start our trajectory server
-    // bspline_server(int _order, double _duration_secs, double _command_interval) 
-    // 25Hz publish rate for command
-    trajectory_server::bspline_server ts;
     
     int test_cycles = 2;
     double random_multiplier = 5.0;
@@ -64,9 +63,8 @@ int main()
             continue;
         }
 
-        bspline_trajectory::bs_pva_state_3d state;
-        state = ts.get_bs_path(random_cp);
-        
+        // bspline_trajectory::bs_pva_state_3d state;
+        // state = ts.get_bs_path(random_cp);
         
         // Print out the time taken for the test cycle
         tu.print_time(test_cycle_start, 
@@ -95,13 +93,13 @@ int main()
 
         // Print out the output for update_get_command_on_path_by_idx
         std::cout << "update_get_command_on_path_by_idx: \n" << 
-            KBLU << cmd_by_idx.p << KNRM << std::endl <<
+            KBLU << cmd_by_idx.p.transpose() << KNRM << std::endl <<
             "cmd_time: " << cmd_by_idx.t << std::endl <<
             "cmd_difference: " << (cmd_by_idx.t - test_command_idx) * 1000 <<
             "ms" << std::endl;
         // Print out the output for update_get_command_by_time
         std::cout << "update_get_command_by_time: \n" << 
-            KBLU << cmd_by_time.p << KNRM << std::endl <<
+            KBLU << cmd_by_time.p.transpose() << KNRM << std::endl <<
             "cmd_time: " << cmd_by_time.t << std::endl <<
             "cmd_difference: " << (cmd_by_time.t - test_command_time) * 1000 <<
             "ms" << std::endl;

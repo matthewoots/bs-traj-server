@@ -77,6 +77,10 @@ namespace trajectory_server
             vector<Eigen::Vector3d> distributed_control_points;
             vector<Eigen::Vector3d> control_points, optimized_control_points;
 
+            int order, duration_secs;
+
+            bool using_old_path;
+
             double min_height, max_height;
             double obs_threshold;
             double search_radius;
@@ -104,8 +108,12 @@ namespace trajectory_server
 
             ~main_server(){}
 
+            /** @brief Extract the direct goal for the planner that is according to maximum velocity */
+            void extract_direct_goal_velocity();
+
+            /** @brief Outdated **/
             /** @brief Extract the direct goal for the planner that is within the search sphere */
-            void extract_direct_goal();
+            // void extract_direct_goal_radius();
 
             /** @brief Use this function wisely, since check and update may cause an infinite loop
             * If a bad data is given to the rrt node and it cannot complete the validity check
@@ -117,10 +125,12 @@ namespace trajectory_server
             void generate_search_path(pcl::PointCloud<pcl::PointXYZ>::Ptr obs);
 
             /** @brief Get the local control points from the RRT module (via distribution) */
-            vector<Eigen::Vector3d> get_local_control_points(double max_vel);
+            vector<Eigen::Vector3d> get_local_control_points();
 
             /** @brief Run the whole algorithm to acquire the control points */
             void complete_path_generation();
+
+            void update_distributed_cp();
 
             /** @brief Update the local cloud data */
             void set_local_cloud(
@@ -139,14 +149,19 @@ namespace trajectory_server
                 double _command_interval, int _knot_div,
                 double _max_vel)
             {
+                order = _order;
+                duration_secs = _duration_secs;
                 ts.init_bspline_server(_order, _duration_secs, _command_interval, _knot_div);
                 max_vel = _max_vel;
             }
 
             /** @brief Initialize the RRT server */
             void initialize_rrt_server(
-                double _sub_runtime_error, double _runtime_error)
+                double _sub_runtime_error, double _runtime_error,
+                double xybuffer, double zbuffer, double passage_size)
             {
+                fe_rrt_server.setup_buffers(xybuffer, zbuffer, passage_size);
+
                 sub_runtime_error = _sub_runtime_error;
                 runtime_error = _runtime_error;
             }
@@ -162,13 +177,7 @@ namespace trajectory_server
                 start = s; end = e; 
                 obs_threshold = protected_zone;
                 search_radius = search_radii;
-            }
-
-            /** @brief Find and update with newly found distributed control points */
-            void update_distributed_cp(double max_vel) 
-            {
-                distributed_control_points.clear();
-                distributed_control_points = get_local_control_points(max_vel);
+                using_old_path = false;
             }
 
             /** @brief Concatenate the control points (overlapping + distributed points) */
@@ -184,14 +193,15 @@ namespace trajectory_server
             }
 
             /** @brief Get the command from the Bspline */
-            bspline_server::pva_cmd update_bs_path_get_command(double max_vel) 
+            bspline_server::pva_cmd update_bs_path_get_command() 
             {
-                trajectory_server::bspline_server::pva_cmd cmd_by_time;
-                cmd_by_time = ts.update_get_command_by_time();
-                vector<Eigen::Vector3d> acceptable_cp =
-                    ts.get_valid_cp_vector(distributed_control_points);
+                return ts.update_get_command_by_time();
+            }
 
-                return cmd_by_time;
+            /** @brief Get the duration from the bspline server **/
+            double get_duration_secs()
+            {
+                return ts.get_segment_duration_secs();
             }
 
             /** @brief Check whether the point is inside the sphere */
@@ -225,6 +235,17 @@ namespace trajectory_server
             void start_module_timer()
             {
                 ts.start_bspline_time();
+            }
+
+            /** @brief Get time from bspline module */
+            double get_bspline_time()
+            {
+                return ts.get_running_time();
+            }
+
+            double get_bspline_knot_interval()
+            {
+                return ts.get_knot_interval();
             }
     };
 

@@ -113,6 +113,7 @@ namespace trajectory_server
             vector<Eigen::Vector3d> get_valid_cp_vector(vector<Eigen::Vector3d> cp);
 
 
+            /** @brief outdated **/
             /** @brief get_bs_path, update_get_command_on_path_by_idx and update_bs_path
              * These 3 functions comes together, this is because update_bs_path have to generate
              * the bspline path and the command functions has to search for the idx
@@ -164,6 +165,16 @@ namespace trajectory_server
             double get_duration_from_start_time()
             {
                 return duration<double>(system_clock::now() - stime).count();
+            }
+
+            double get_segment_duration_secs()
+            {
+                return duration_secs;
+            }
+
+            double get_knot_interval()
+            {
+                return knot_interval;
             }
             
             vector<Eigen::Vector3d> get_overlapping_cp()
