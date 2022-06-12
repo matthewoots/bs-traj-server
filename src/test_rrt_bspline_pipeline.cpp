@@ -38,10 +38,8 @@ int main()
     std::uniform_real_distribution<double> dis_middle(-1.0, 1.0);
     std::uniform_real_distribution<double> dis_normal(0.0, 1.0);
 
-    vector<Eigen::Vector3d> goal_vector;
     Eigen::Vector3d start = Eigen::Vector3d(-5,5,1.5);
     Eigen::Vector3d goal = Eigen::Vector3d(5,-5,1.9);
-    goal_vector.push_back(goal);
 
     double obs_threshold = 0.2;
     double search_radius = 9.0;
@@ -95,7 +93,7 @@ int main()
     std::cout << "[pipeline] " << KBLU << 
         "reset_goal_points" << KNRM << std::endl;
     ms.reset_goal_points(
-        start, goal_vector[0], obs_threshold, search_radius);
+        start, goal, obs_threshold, search_radius);
     // ms.initialize_bspline_server(
     //  _order, _traj_duration_secs, 1/_cmd_update_hz, 
     //  _des_knot_div, _max_vel);
@@ -160,16 +158,17 @@ int main()
         trajectory_server::bspline_server::pva_cmd cmd;
         cmd = ms.update_bs_path_get_command();
 
+        IOFormat CleanFmt(3, 0, ", ", "\n", "[", "]");
         std::cout << "[pipeline] time: " << 
-            KRED << ms.get_start_time()  << KNRM <<
+            KRED << std::setprecision(3) << ms.get_start_time()  << KNRM <<
             " " << 
-            KBLU <<  cmd.t  << KNRM <<
+            KBLU <<  std::setprecision(3) << cmd.t  << KNRM <<
             " " << 
-            KRED << ms.get_end_time()  << KNRM <<
+            KRED << std::setprecision(3) << ms.get_end_time()  << KNRM <<
             " position: " << 
-            KBLU << cmd.p.transpose() << KNRM << 
+            KBLU << cmd.p.transpose().format(CleanFmt) << KNRM << 
             " total velocity: " << 
-            KBLU << cmd.v.norm() << KNRM << std::endl;
+            KBLU << std::setprecision(3) << cmd.v.norm() << KNRM << std::endl;
         
         double offset_ms = 0.0;
         if (ms.get_bspline_time() - time > 0)

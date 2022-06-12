@@ -188,24 +188,6 @@ namespace trajectory_server
                 return new_cp_vector;
             }
 
-            /** @brief Get the command from the Bspline */
-            bspline_server::pva_cmd update_bs_path_get_command() 
-            {
-                return ts.update_get_command_by_time();
-            }
-
-            /** @brief Get the end time from the bspline server **/
-            double get_end_time()
-            {
-                return ts.get_end_time_for_path();
-            }
-
-            /** @brief Get the start time from the bspline server **/
-            double get_start_time()
-            {
-                return ts.get_start_time_for_path();
-            }
-
             /** @brief Check whether the point is inside the sphere */
             bool inside_sphere_check(Eigen::Vector3d point, 
                 Eigen::Vector3d sphere_center, double radii)
@@ -233,6 +215,30 @@ namespace trajectory_server
                 return distributed_control_points;
             }
 
+            /** @brief Get the command from the Bspline */
+            bspline_server::pva_cmd update_bs_path_get_command() 
+            {
+                return ts.update_get_command_by_time();
+            }
+
+            /** @brief Get the end time from the bspline server **/
+            double get_end_time()
+            {
+                return ts.get_end_time_for_path();
+            }
+
+            /** @brief Get the start time from the bspline server **/
+            double get_start_time()
+            {
+                return ts.get_start_time_for_path();
+            }
+
+            /** @brief Reset the start time for the bspline server **/
+            void reset_bspline_start_time()
+            {
+                ts.reset_start_time();
+            }
+
             /** @brief Start the Bspline timer */
             void start_module_timer()
             {
@@ -248,6 +254,11 @@ namespace trajectory_server
             double get_bspline_knot_interval()
             {
                 return ts.get_knot_interval();
+            }
+
+            vector<Eigen::Vector3d> get_bspline_control_points(double time)
+            {
+                return ts.get_finite_bs_control_points(time);
             }
     };
 

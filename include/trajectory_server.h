@@ -159,6 +159,11 @@ namespace trajectory_server
                 return duration<double>(system_clock::now() - stime).count();
             }
 
+            void reset_start_time()
+            {
+                stime = default_time;
+            }
+
             double get_end_time_for_path()
             {
                 return timespan[1];
@@ -199,6 +204,23 @@ namespace trajectory_server
                 }
             }
 
+            vector<Eigen::Vector3d> get_finite_bs_control_points(double time)
+            {
+                vector<Eigen::Vector3d> finite_cp;
+
+                int valid_count = (int)floor(time / knot_interval);
+                int counter = 0;
+                for (int i = current_cp_idx; i < bs_control_points.size(); i++)
+                {
+                    counter++;
+                    if (counter > valid_count)
+                        break;
+                    finite_cp.push_back(bs_control_points[i]);
+                }
+
+                return finite_cp;
+            }
+
         private:
 
             std::mutex bs_path_mutex;
@@ -220,6 +242,7 @@ namespace trajectory_server
             bspline_trajectory::bs_pva_state_3d pva_state;
             bspline_server::pva_cmd pva_cmd_msg;
 
+            time_point<std::chrono::system_clock> default_time;
             time_point<std::chrono::system_clock> stime; // start time for bspline server in time_t
             vector<time_point<std::chrono::system_clock>> time_span_chronos;
 

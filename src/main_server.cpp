@@ -76,8 +76,8 @@ namespace trajectory_server
                 previous_search_points.erase(previous_search_points.end());
         }
 
-        std::cout << "[main_server] previous_search_points.size(): " << 
-            KGRN << previous_search_points.size() << KNRM << std::endl;
+        // std::cout << "[main_server] previous_search_points.size(): " << 
+        //     KGRN << previous_search_points.size() << KNRM << std::endl;
     }
 
     /** @brief Construct the search path from RRT search and from its shortened path */
@@ -88,10 +88,10 @@ namespace trajectory_server
 
         double radii;
         radii = search_radius;
-        std::cout << "[main_server] generate_search_path from " <<
-            KBLU << current_control_point.transpose() << KNRM << 
-            " to " << 
-            KBLU << end.transpose() << KNRM << std::endl;
+        // std::cout << "[main_server] generate_search_path from " <<
+        //     KBLU << current_control_point.transpose() << KNRM << 
+        //     " to " << 
+        //     KBLU << end.transpose() << KNRM << std::endl;
 
         // Find a RRT path that is quick and stretches to the end point
         vector<Eigen::Vector3d> path = fe_rrt_server.find_rrt_path(
@@ -120,8 +120,8 @@ namespace trajectory_server
 
             previous_search_points.push_back(global_search_path[i]);
         }  
-        std::cout << "[main_server] previous_search_points.size(): " <<
-            KBLU << previous_search_points.size() << KNRM << std::endl;
+        // std::cout << "[main_server] previous_search_points.size(): " <<
+        //     KBLU << previous_search_points.size() << KNRM << std::endl;
 
         return ts.get_redistributed_cp_vector(
             current_control_point,
@@ -143,8 +143,8 @@ namespace trajectory_server
             current_control_point = start;
         }
 
-        std::cout << "[main_server] current_control_point: " <<
-            KBLU << current_control_point.transpose() << KNRM << std::endl;
+        // std::cout << "[main_server] current_control_point: " <<
+        //     KBLU << current_control_point.transpose() << KNRM << std::endl;
 
         // Setup the RRT server parameters 
         fe_rrt_server.reset_parameters(
