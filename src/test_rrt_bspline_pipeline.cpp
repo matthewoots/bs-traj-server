@@ -39,8 +39,8 @@ int main()
     std::uniform_real_distribution<double> dis_normal(0.0, 1.0);
 
     vector<Eigen::Vector3d> goal_vector;
-    Eigen::Vector3d start = Eigen::Vector3d(-5,5,3);
-    Eigen::Vector3d goal = Eigen::Vector3d(5,-5,2);
+    Eigen::Vector3d start = Eigen::Vector3d(-5,5,1.5);
+    Eigen::Vector3d goal = Eigen::Vector3d(5,-5,1.9);
     goal_vector.push_back(goal);
 
     double obs_threshold = 0.2;
@@ -49,11 +49,11 @@ int main()
     double _sub_runtime_error = 0.02;
     double _runtime_error = 0.12;
 
-    double _min_height = 1.0;
-    double _max_height = 4.0;
+    double _min_height = 1.3;
+    double _max_height = 2.0;
 
     double _xybuffer = 1.0;
-    double _zbuffer = 4.0;
+    double _zbuffer = 0.5;
     double _passage_size = 12.0;
 
     double _max_vel = 3.0;
@@ -62,7 +62,33 @@ int main()
     double _cmd_update_hz = 10;
     double _cmd_update_interval = 1/_cmd_update_hz;
 
-    double path_generation_interval = 0.5;
+    double path_generation_interval = 0.8;
+    double time_to_add_cloud_iter = 2;
+
+    pcl::PointCloud<pcl::PointXYZ>::Ptr cloud = pcl::PointCloud<pcl::PointXYZ>::Ptr(
+        new pcl::PointCloud<pcl::PointXYZ>());
+    // size of cloud = 1 x 1 x 1 block
+    double cube_size = 1.0; 
+    Eigen::Vector3d middle = (start + goal) / 2;
+    double offset = - cube_size / 2;
+    double resolution = obs_threshold / 2;
+    int index = (int)(1 / resolution);
+
+
+    for (int i = 0; i < index; i++)
+    {
+        for (int j = 0; j < index; j++)
+        {
+            for (int k = 0; k < index; k++)
+            {
+                pcl::PointXYZ point;
+                point.x = middle.x() + offset + i*resolution;
+                point.y = middle.y() + offset + j*resolution;
+                point.z = middle.z() + offset + k*resolution;
+                cloud->points.push_back(point);
+            }
+        }
+    } 
 
     time_point<std::chrono::system_clock> test_cycle_start = system_clock::now();   
 
@@ -94,25 +120,52 @@ int main()
     int time_step_ms = (int)floor(_cmd_update_interval * 1000);
     double time = 0.0;
     std::cout << "[pipeline] duration: " << KBLU << 
-        ms.get_duration_secs() << KNRM << std::endl;
+        ms.get_end_time() << KNRM << std::endl;
     
     // i represents the command timer, j represents the path_generation timer
     int i = 1, j = 1;
     std::this_thread::sleep_for(std::chrono::milliseconds(time_step_ms));
-    while (time < ms.get_duration_secs() - 0.01)
+    while (time < ms.get_end_time() - _cmd_update_interval)
     {
         time = i * _cmd_update_interval;
+
+
         if (time - j * path_generation_interval >= 0)
         {
-            ms.complete_path_generation();
             j++;
+            if (j == time_to_add_cloud_iter)
+            {
+                std::cout << "[pipeline] Added cloud" << std::endl;
+                ms.set_local_cloud(cloud);
+            }
+            
+            std::cout << std::endl;
+            
+            std::cout << KRED << 
+                "[pipeline] Starting complete_path_generation" << 
+                KNRM << std::endl;
+            time_point<std::chrono::system_clock> test_cycle_start = system_clock::now();
+
+            ms.complete_path_generation();
+            
+            auto test_time_diff = duration<double>(system_clock::now() - test_cycle_start).count();
+            std::cout << KRED << 
+                "[pipeline] Completed complete_path_generation" << 
+                KNRM << " in " << KBLU << test_time_diff*1000 << KNRM <<
+                "ms" << std::endl;
+
+            std::cout << std::endl;          
         }
 
         trajectory_server::bspline_server::pva_cmd cmd;
         cmd = ms.update_bs_path_get_command();
 
         std::cout << "[pipeline] time: " << 
-            KBLU << cmd.t  << KNRM <<
+            KRED << ms.get_start_time()  << KNRM <<
+            " " << 
+            KBLU <<  cmd.t  << KNRM <<
+            " " << 
+            KRED << ms.get_end_time()  << KNRM <<
             " position: " << 
             KBLU << cmd.p.transpose() << KNRM << 
             " total velocity: " << 

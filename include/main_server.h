@@ -68,18 +68,15 @@ namespace trajectory_server
 
             vector<Eigen::Vector3d> previous_search_points;
             vector<Eigen::Vector3d> global_search_path;
-            vector<Eigen::Vector3d> local_search_path;
 
             vector<Eigen::Vector4d> no_fly_zone;
 
             /** @brief Start and end time span to feed into bspline */
             vector<Eigen::Vector3d> time_span; 
-            vector<Eigen::Vector3d> distributed_control_points;
+            vector<Eigen::Vector3d> distributed_control_points, altered_distributed_control_points;
             vector<Eigen::Vector3d> control_points, optimized_control_points;
 
             int order, duration_secs;
-
-            bool using_old_path;
 
             double min_height, max_height;
             double obs_threshold;
@@ -87,6 +84,7 @@ namespace trajectory_server
             double intersection_idx;
             double max_vel;
             double sub_runtime_error, runtime_error;
+            double leg_duration;
 
             std::mutex search_points_mutex;
             std::mutex control_points_mutex;
@@ -108,8 +106,9 @@ namespace trajectory_server
 
             ~main_server(){}
 
+            /** @brief Outdated **/
             /** @brief Extract the direct goal for the planner that is according to maximum velocity */
-            void extract_direct_goal_velocity();
+            // void extract_direct_goal_velocity();
 
             /** @brief Outdated **/
             /** @brief Extract the direct goal for the planner that is within the search sphere */
@@ -129,8 +128,6 @@ namespace trajectory_server
 
             /** @brief Run the whole algorithm to acquire the control points */
             void complete_path_generation();
-
-            void update_distributed_cp();
 
             /** @brief Update the local cloud data */
             void set_local_cloud(
@@ -177,7 +174,6 @@ namespace trajectory_server
                 start = s; end = e; 
                 obs_threshold = protected_zone;
                 search_radius = search_radii;
-                using_old_path = false;
             }
 
             /** @brief Concatenate the control points (overlapping + distributed points) */
@@ -198,10 +194,16 @@ namespace trajectory_server
                 return ts.update_get_command_by_time();
             }
 
-            /** @brief Get the duration from the bspline server **/
-            double get_duration_secs()
+            /** @brief Get the end time from the bspline server **/
+            double get_end_time()
             {
-                return ts.get_segment_duration_secs();
+                return ts.get_end_time_for_path();
+            }
+
+            /** @brief Get the start time from the bspline server **/
+            double get_start_time()
+            {
+                return ts.get_start_time_for_path();
             }
 
             /** @brief Check whether the point is inside the sphere */

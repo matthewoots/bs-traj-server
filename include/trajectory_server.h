@@ -105,12 +105,13 @@ namespace trajectory_server
             /** @brief Start the Bspline timer and saves the start time **/
             void start_bspline_time();
 
-            
+
+            /** @brief outdated **/
             /** @brief Get the corrected control points that fits the knot span
              * @param cp raw control point data that has not yet been cropped to the
              * acceptable size
             **/
-            vector<Eigen::Vector3d> get_valid_cp_vector(vector<Eigen::Vector3d> cp);
+            // vector<Eigen::Vector3d> get_valid_cp_vector(vector<Eigen::Vector3d> cp);
 
 
             /** @brief outdated **/
@@ -118,10 +119,10 @@ namespace trajectory_server
              * These 3 functions comes together, this is because update_bs_path have to generate
              * the bspline path and the command functions has to search for the idx
             */
-            bspline_trajectory::bs_pva_state_3d get_bs_path(
-                vector<Eigen::Vector3d> cp);
-            void update_bs_path(vector<Eigen::Vector3d> cp);
-            bspline_server::pva_cmd update_get_command_on_path_by_idx();
+            // bspline_trajectory::bs_pva_state_3d get_bs_path(
+            //     vector<Eigen::Vector3d> cp);
+            // void update_bs_path(vector<Eigen::Vector3d> cp);
+            // bspline_server::pva_cmd update_get_command_on_path_by_idx();
 
 
             /** @brief update_get_command_on_path_by_time
@@ -137,18 +138,9 @@ namespace trajectory_server
                 Eigen::Vector3d current_target_cp,
                 vector<Eigen::Vector3d> cp, double max_vel);
 
-
-            /** @brief After optimization or redistribution, update with the Bspline 
-             * control points that are found, and update the next timespan that will be used 
-            **/
-            void update_timespan_and_control_points(
-                vector<Eigen::Vector3d> control_points);
-
-
             /** @brief Return the query control point and update the overlap control 
              * point vectors **/
-            Eigen::Vector3d get_current_cp_and_overlap(
-                double additional_secs);
+            Eigen::Vector3d get_current_cp_and_overlap();
 
 
             bool valid_cp_count_check(size_t cp_size)
@@ -167,9 +159,14 @@ namespace trajectory_server
                 return duration<double>(system_clock::now() - stime).count();
             }
 
-            double get_segment_duration_secs()
+            double get_end_time_for_path()
             {
-                return duration_secs;
+                return timespan[1];
+            }
+
+            double get_start_time_for_path()
+            {
+                return timespan[0];
             }
 
             double get_knot_interval()
@@ -182,23 +179,36 @@ namespace trajectory_server
                 return overlapping_control_points;
             }
 
-            void update_control_points(
-                vector<Eigen::Vector3d> control_points)
+            void update_control_points(vector<Eigen::Vector3d> control_points)
             {
                 std::lock_guard<std::mutex> path_lock(bs_path_mutex);
+                bs_control_points.clear();
                 bs_control_points = control_points;
+            }
+
+            void update_timespan(double total_time)
+            {
+                duration_secs = total_time;
+                std::cout << "[bspline_server] duration_secs: " 
+                    << KBLU << duration_secs << KNRM << "s" << std::endl;
+                if (!timespan.empty())
+                {
+                    timespan.clear();
+                    timespan.push_back(current_knot_time);
+                    timespan.push_back(current_knot_time + duration_secs);
+                }
             }
 
         private:
 
             std::mutex bs_path_mutex;
-            std::mutex cmd_mutex;
             std::mutex time_mutex;
 
             /** @brief Parameters for libbspline */ 
             int order, knot_div, knot_size;
             int acceptable_cp_size;
             double command_interval, duration_secs, knot_interval;
+            double current_knot_time;
             vector<double> timespan;
             vector<double> original_timespan;
 

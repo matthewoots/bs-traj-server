@@ -42,13 +42,15 @@ int main()
     
     int test_cycles = 2;
     double random_multiplier = 5.0;
+    int order = 5;
 
     for (int i = 0; i < test_cycles; i++)
     {
         time_point<std::chrono::system_clock> test_cycle_start = system_clock::now();
 
-        ts.init_bspline_server(5, 8.0, 0.04, 10);
+        ts.init_bspline_server(order, 8.0, 0.04, 10);
         int total_cp_size = (int)round(dis(generator) * 100);
+        std::cout << "total_cp_size " << KRED << total_cp_size << KNRM << std::endl;
 
         vector<Eigen::Vector3d> random_cp;
         for (int j = 0; j < total_cp_size; j++)
@@ -56,6 +58,10 @@ int main()
                 (dis(generator) - 0.5) * random_multiplier, 
                 (dis(generator) - 0.5) * random_multiplier, 
                 dis(generator) * random_multiplier));
+        
+        double duration = 
+            ((double)random_cp.size() - order) * ts.get_knot_interval();
+        ts.update_timespan(duration);
         
         if (!ts.valid_cp_count_check(random_cp.size()))
         {
@@ -70,6 +76,7 @@ int main()
         tu.print_time(test_cycle_start, 
             "test (" + std::to_string(i) + ") runtime:");
 
+        ts.update_control_points(random_cp);
         ts.start_bspline_time();
         
         std::this_thread::sleep_for(std::chrono::milliseconds(2000));
@@ -78,25 +85,24 @@ int main()
         std::cout << "displaced_time: " << 
             KBLU << displaced_time << KNRM << std::endl;
 
-        trajectory_server::bspline_server::pva_cmd cmd_by_idx;
+        // trajectory_server::bspline_server::pva_cmd cmd_by_idx;
         trajectory_server::bspline_server::pva_cmd cmd_by_time;
-        ts.update_bs_path(random_cp);
-        vector<Eigen::Vector3d> acceptable_cp =
-            ts.get_valid_cp_vector(random_cp);
-        ts.update_control_points(acceptable_cp);
+        // ts.update_bs_path(random_cp);
+        // vector<Eigen::Vector3d> acceptable_cp =
+        //     ts.get_valid_cp_vector(random_cp);
         
         double test_command_time = ts.get_duration_from_start_time();
         cmd_by_time = ts.update_get_command_by_time();
         
-        double test_command_idx = ts.get_duration_from_start_time();
-        cmd_by_idx = ts.update_get_command_on_path_by_idx();
+        // double test_command_idx = ts.get_duration_from_start_time();
+        // cmd_by_idx = ts.update_get_command_on_path_by_idx();
 
         // Print out the output for update_get_command_on_path_by_idx
-        std::cout << "update_get_command_on_path_by_idx: \n" << 
-            KBLU << cmd_by_idx.p.transpose() << KNRM << std::endl <<
-            "cmd_time: " << cmd_by_idx.t << std::endl <<
-            "cmd_difference: " << (cmd_by_idx.t - test_command_idx) * 1000 <<
-            "ms" << std::endl;
+        // std::cout << "update_get_command_on_path_by_idx: \n" << 
+        //     KBLU << cmd_by_idx.p.transpose() << KNRM << std::endl <<
+        //     "cmd_time: " << cmd_by_idx.t << std::endl <<
+        //     "cmd_difference: " << (cmd_by_idx.t - test_command_idx) * 1000 <<
+        //     "ms" << std::endl;
         // Print out the output for update_get_command_by_time
         std::cout << "update_get_command_by_time: \n" << 
             KBLU << cmd_by_time.p.transpose() << KNRM << std::endl <<
