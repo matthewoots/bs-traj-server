@@ -171,6 +171,8 @@ namespace trajectory_server
                 previous_search_points.clear();
                 time_span.clear();
                 control_points.clear();
+                global_search_path.clear();
+                distributed_control_points.clear();
                 start = s; end = e; 
                 obs_threshold = protected_zone;
                 search_radius = search_radii;

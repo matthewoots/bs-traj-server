@@ -143,8 +143,9 @@ namespace trajectory_server
             current_control_point = start;
         }
 
-        // std::cout << "[main_server] current_control_point: " <<
-        //     KBLU << current_control_point.transpose() << KNRM << std::endl;
+        std::cout << "[main_server] starting from [" <<
+            KBLU << current_control_point.transpose() << KNRM << "] to ["
+            KBLU << end.transpose() << KNRM << "]" << std::endl;
 
         // Setup the RRT server parameters 
         fe_rrt_server.reset_parameters(
@@ -246,7 +247,7 @@ namespace trajectory_server
         
         optimized_control_points = altered_distributed_control_points;
 
-        // Print our the optimized_control_points    
+        // Print out the optimized_control_points    
         std::cout << "[main_server] optimized_control_points : ";
         for (int i = 0; i < optimized_control_points.size(); i++)
             std::cout << "[" << KGRN << 

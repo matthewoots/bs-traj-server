@@ -36,6 +36,7 @@ namespace trajectory_server
         int _order, double _duration_secs, double _command_interval, int _knot_div) 
     {
         tu.test_chronos();
+        overlapping_control_points.clear();
         command_interval = _command_interval;
         knot_div = _knot_div;
         order = _order;
@@ -148,7 +149,15 @@ namespace trajectory_server
         if (!pva3.acc.empty())
             pva.a = pva3.acc[0];
         
-        pva.yaw = atan2(_norm_y,_norm_x);
+        // If velocity is too low, then any noise will cause the yaw to fluctuate
+        // Restrict the yaw if velocity is too low
+        if (pva.v.norm() < 0.01)
+            pva.yaw = previous_yaw;
+        else
+        {
+            pva.yaw = atan2(_norm_y,_norm_x);
+            previous_yaw = pva.yaw;
+        }
 
         return pva;
     }

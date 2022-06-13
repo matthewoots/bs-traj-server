@@ -210,7 +210,7 @@ namespace trajectory_server
 
                 int valid_count = (int)floor(time / knot_interval);
                 int counter = 0;
-                for (int i = current_cp_idx; i < bs_control_points.size(); i++)
+                for (int i = current_cp_idx - order; i < bs_control_points.size(); i++)
                 {
                     counter++;
                     if (counter > valid_count)
@@ -231,6 +231,7 @@ namespace trajectory_server
             int acceptable_cp_size;
             double command_interval, duration_secs, knot_interval;
             double current_knot_time;
+            double previous_yaw;
             vector<double> timespan;
             vector<double> original_timespan;
 
