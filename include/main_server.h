@@ -75,6 +75,7 @@ namespace trajectory_server
             vector<Eigen::Vector3d> time_span; 
             vector<Eigen::Vector3d> distributed_control_points, altered_distributed_control_points;
             vector<Eigen::Vector3d> control_points, optimized_control_points;
+            vector<double> previous_search_points_time;
 
             int order, duration_secs;
 

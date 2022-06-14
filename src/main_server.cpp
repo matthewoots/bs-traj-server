@@ -188,6 +188,21 @@ namespace trajectory_server
             generate_search_path(local_cloud);    
             std::cout << "[main_server]" << KBLU << 
                 " 3. generate_search_path complete" << KNRM << std::endl;
+            
+            // To add tracking of time to clear the previous search points, so that the check_and_update_search
+            // function will be stick with the old search points to check for validity 
+            previous_search_points_time.clear();  
+            double time_offset = 0.0;
+            if (ts.get_duration_from_start_time() < pow(10,6))
+                time_offset = ts.get_start_time_for_path();
+            double total_time = 0.0 + time_offset;     
+            double distance_span = max_vel * ts.get_knot_interval();        
+            for (int i = 1; i < global_search_path.size(); i++)
+            {
+                total_time += 
+                    (ceil((global_search_path[i] - global_search_path[i-1]).norm() / distance_span)) * ts.get_knot_interval();
+                previous_search_points_time.push_back(total_time);
+            }
 
             // Find and update with newly found distributed control points
             distributed_control_points.clear();
@@ -244,6 +259,18 @@ namespace trajectory_server
         // Get the valid control points that we can use
         // vector<Eigen::Vector3d> acceptable_cp =
         //     ts.get_valid_cp_vector(altered_distributed_control_points);
+
+        if (!previous_search_points_time.empty())
+        {
+            if (ts.get_running_time() >= previous_search_points_time[0])
+            {
+                if (previous_search_points_time.size() > 1)
+                {
+                    previous_search_points_time.erase(previous_search_points_time.begin());
+                    previous_search_points.erase(previous_search_points.begin());
+                }
+            } 
+        }
         
         optimized_control_points = altered_distributed_control_points;
 

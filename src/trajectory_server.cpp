@@ -204,7 +204,7 @@ namespace trajectory_server
             return nan_vector;
             
         // Find the matching time
-        for (int i = 1; i <= knot_size; i++)
+        for (int i = 1; i <= bs_control_points.size()-1; i++)
         {
             double time_at_knot = timespan[0] + i * knot_interval;
             
@@ -227,10 +227,10 @@ namespace trajectory_server
             return nan_vector;
         
         // Size of overlap is always order - 1
-        int size_of_overlapping_cp = order - 1; 
+        int size_of_overlapping_cp = order; 
 
         overlapping_control_points.clear();
-        std::cout << "[main_server] ";
+        std::cout << "[bspline_server] ";
         for (int i = 0; i < size_of_overlapping_cp; i++)
         {
             // Update the overlapping control points to be used in the next search
@@ -241,6 +241,8 @@ namespace trajectory_server
                 bs_control_points[current_cp_idx - order + i].transpose() << KNRM << "] "; 
         }
         std::cout << std::endl;
+        std::cout << "[bspline_server] current_cp_idx: " <<
+            KCYN << bs_control_points[current_cp_idx].transpose() << KNRM << std::endl;
 
         return bs_control_points[current_cp_idx];
     }
