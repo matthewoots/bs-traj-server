@@ -30,9 +30,6 @@
 #include <cfloat>
 #include <Eigen/Dense>
 
-#include "bspline_utils.hpp"
-#include "trajectory_server.h"
-
 #include <pcl/point_types.h>
 #include <pcl/conversions.h>
 #include <pcl/point_cloud.h>
@@ -51,7 +48,6 @@
 #define KWHT  "\033[37m"
 
 using namespace Eigen;
-using namespace trajectory;
 using namespace std::chrono;
 using namespace std;
 using namespace common_utils;
@@ -119,6 +115,14 @@ namespace trajectory_server
             pcl::PointCloud<pcl::PointXYZ>::Ptr full_pcl;
 
         public:
+
+            struct other_agents_traj
+            {
+                int id;
+                vector<Eigen::Vector3d> cp;
+                vector<double> knots;
+            };
+
             optimizer(int n_) : n(n_) {}
 
             void set_params_and_data(
@@ -159,7 +163,7 @@ namespace trajectory_server
             {
                 double fx = 0.0;            
                 obs_pcl.clear();
-                double factor = 4.0;
+                double factor = 2.0;
                 Eigen::Vector3d dimensions = Eigen::Vector3d(
                     factor * protected_zone,
                     factor * protected_zone,
@@ -190,44 +194,6 @@ namespace trajectory_server
                 
                 return fx;
             }
-    };
-
-    class optimization_server
-    {
-        public:
-        
-            optimization_server(vector<double> weight_vector)
-            {
-                if (weight_vector.size() != 5)
-                    return;
-                // Index for weights
-                // 0. _weight_smooth = weight_vector[0]; 
-                // 1. _weight_feas = weight_vector[1];
-                // 2. _weight_term = weight_vector[2];
-                // 3. _weight_static = weight_vector[3];
-                // 4. _weight_reci = weight_vector[4];
-                _weight_vector = weight_vector;
-            }
-            
-            ~optimization_server(){}
-
-            // Solver will solve with the given partial global_spline 
-            vector<Eigen::Vector3d> solver(
-                vector<Eigen::Vector3d> global_spline, 
-                vector<Eigen::Vector3d> reference_spline, 
-                vector<double> time_points, 
-                pcl::PointCloud<pcl::PointXYZ>::Ptr obs, 
-                double dt, double max_acc,
-                double protected_zone,
-                double min_height, double max_height);
-
-
-        private:
-
-            trajectory_server::optimization_utils ou;
-
-            vector<double> _weight_vector;
-
     };
 
 };

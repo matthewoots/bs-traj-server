@@ -35,14 +35,6 @@ target_link_libraries(${PROJECT_NAME}_test_pipeline_node
     ${PCL_LIBRARIES}
     librrtserver)
 
-# add_executable(${PROJECT_NAME}_test_optimization_node 
-#     src/test_random_points.cpp
-#     src/trajectory_server.cpp
-#     src/optimization_server.cpp
-# )
-# target_link_libraries(${PROJECT_NAME}_test_optimization_node 
-#     ${PCL_LIBRARIES})
-
 add_library(${PROJECT_NAME} STATIC ${SRC_FILES} ${INCLUDE_FILES})
 target_include_directories (${PROJECT_NAME} PUBLIC 
     ${PROJECT_SOURCE_DIR} 

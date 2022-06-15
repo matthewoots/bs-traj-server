@@ -36,6 +36,7 @@
 
 #include "trajectory_server.h"
 #include "rrt_server_module.h"
+#include "optimization_server.h"
 
 #define KNRM  "\033[0m"
 #define KRED  "\033[31m"
@@ -51,20 +52,25 @@ using namespace std;
 using namespace Eigen;
 using namespace trajectory;
 using namespace rrt_server;
+using namespace LBFGSpp;
 
 namespace trajectory_server
 {
     class main_server
     {
         private:
+
             /** @brief Front end RRT Server */
             rrt_server::rrt_server_node fe_rrt_server;
-            trajectory_server::bspline_server ts;
             rrt_server::rrt_utility ru; 
+            trajectory_server::bspline_server ts;
+            trajectory_server::optimization_utils ou;
 
             Eigen::Vector3d start, end;
             Eigen::Vector3d direct_goal, current_control_point;
             Eigen::Vector3d current_pose;
+
+            vector<double> _weight_vector;
 
             vector<Eigen::Vector3d> previous_search_points;
             vector<Eigen::Vector3d> global_search_path;
@@ -130,6 +136,8 @@ namespace trajectory_server
             /** @brief Run the whole algorithm to acquire the control points */
             void complete_path_generation();
 
+            void run_optimization();
+
             /** @brief Update the local cloud data */
             void set_local_cloud(
                 pcl::PointCloud<pcl::PointXYZ>::Ptr _local_cloud)
@@ -162,6 +170,20 @@ namespace trajectory_server
 
                 sub_runtime_error = _sub_runtime_error;
                 runtime_error = _runtime_error;
+            }
+
+            /** @brief Initialize the optimization server */
+            void initialize_opt_server(vector<double> weight_vector)
+            {
+                if (weight_vector.size() != 5)
+                    return;
+                // Index for weights
+                // 0. _weight_smooth = weight_vector[0]; 
+                // 1. _weight_feas = weight_vector[1];
+                // 2. _weight_term = weight_vector[2];
+                // 3. _weight_static = weight_vector[3];
+                // 4. _weight_reci = weight_vector[4];
+                _weight_vector = weight_vector;
             }
 
             /** @brief Restart and reinitialize the start and end goals */
@@ -262,6 +284,11 @@ namespace trajectory_server
             vector<Eigen::Vector3d> get_bspline_control_points(double time)
             {
                 return ts.get_finite_bs_control_points(time);
+            }
+
+            vector<double> get_bspline_knots(double time)
+            {
+                return ts.get_current_knots(time);
             }
     };
 

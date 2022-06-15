@@ -274,6 +274,8 @@ namespace trajectory_server
         
         optimized_control_points = altered_distributed_control_points;
 
+        // vector<Eigen::Vector3d> get_bspline_control_points(double time)
+
         // Print out the optimized_control_points    
         // std::cout << "[main_server] optimized_control_points : ";
         // for (int i = 0; i < optimized_control_points.size(); i++)
@@ -284,6 +286,113 @@ namespace trajectory_server
         ts.update_control_points(altered_distributed_control_points);
         std::cout << "[main_server]" << KBLU << 
             " 6. update_control_points complete" << KNRM << std::endl;
+
+    }
+
+    void main_server::run_optimization()
+    {
+        /** @brief Previous implementation summary **/
+        // vector<Eigen::Vector3d> solver(
+        //     vector<Eigen::Vector3d> global_spline, 
+        //     vector<Eigen::Vector3d> reference_spline, 
+        //     vector<double> time_points, 
+        //     pcl::PointCloud<pcl::PointXYZ>::Ptr obs, 
+        //     double dt, double max_acc,
+        //     double protected_zone,
+        //     double min_height, double max_height);
+
+        // global_spline = get_bspline_control_points (finite)
+        // reference_spline = fixed (finite)
+        // time_points = knots
+        // obs = local_cloud
+        // dt = knot_interval
+        // max_acc = maximum acceleration
+        // protected_zone = obs_threshold
+        // min_height = min_height
+        // max_height = max_height
+
+        // Seems like LBFGS-B is using "More Thuente" for line search by default
+
+        // Set up parameters
+        LBFGSBParam<double> param = ou.setup_lbfgs_param();
+        vector<Eigen::Vector3d> local_control_points =
+            get_bspline_control_points(duration_secs);
+        vector<double> time_points = 
+            get_bspline_knots(duration_secs);
+
+        int number_of_col = local_control_points.size();
+        int number_of_row = 3; // Should be 3 for XYZ
+
+        // We need to compress g_spline to a single array
+        // g_spline -> g_single_array
+        // MatrixXd to vector<double>
+        // col*0 + (0 to col-1) = x 
+        // col*1 + (0 to col-1) = y
+        // col*2 + (0 to col-1) = z
+        // Initial guess = g_single_array which is x
+        Eigen::VectorXd x = 
+            VectorXd::Zero(number_of_col * number_of_row);
+        x = ou.vect_vector3_to_single(local_control_points);
+
+        // Create solver and function object
+        LBFGSBSolver<double> solver(param);  // New solver class
+        trajectory_server::optimizer opt(number_of_col * number_of_row);
+
+        // Bounds
+        // Setup Lower Bound and upper bound for now we take z to be clamped
+        Eigen::VectorXd lb = VectorXd::Zero(number_of_col * number_of_row);
+        Eigen::VectorXd ub = VectorXd::Zero(number_of_col * number_of_row);
+        for (int i = 0; i < number_of_row; i++)
+        {
+            for (int j = 0; j < number_of_col; j++)
+            {
+                if (i != 2)
+                {
+                    // If representing x and y
+                    // Load in max and min double lower and upper bound
+                    lb(number_of_col*i + j) = -DBL_MAX;
+                    ub(number_of_col*i + j) = DBL_MAX;
+                }
+                else
+                {
+                    // If representing z
+                    // Load in Lower and Upper bound
+                    lb(number_of_col*i + j) = min_height;
+                    ub(number_of_col*i + j) = max_height;
+                }
+
+            }
+        }
+
+        // x will be overwritten to be the best point found
+        double fx = 0; // Cost
+        opt.set_params_and_data(
+            get_bspline_knot_interval(), 3.0, 
+            obs_threshold, local_control_points, 
+            local_cloud, time_points);
+        opt.set_weights(_weight_vector);
+        
+        int iter = solver.minimize(opt, x, fx, lb, ub);
+
+        // single_array -- back into --> global_spline
+        // vector<double> to vector<Vector3d>
+
+        std::cout << "[main_server] Iterations " << 
+            KBLU << iter << KNRM << "! F(x) " << 
+            KBLU << fx << KNRM << "!" << std::endl;
+        
+        vector<Eigen::Vector3d> cp;
+
+        for (int j = 0; j < number_of_col; j++)
+        {
+            // Add the vector3d to the global_spline vector
+            Eigen::Vector3d single_point = Eigen::Vector3d(
+                x[number_of_col * 0 + j], x[number_of_col * 1 + j], x[number_of_col * 2 + j]);
+            
+            cp.push_back(single_point);
+        }
+
+        // Update to bspline server
 
     }
 
