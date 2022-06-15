@@ -184,6 +184,22 @@ namespace trajectory_server
                 return overlapping_control_points;
             }
 
+            void update_local_control_points(
+                double time, vector<Eigen::Vector3d> control_points)
+            {
+
+                int valid_count = (int)floor(time / knot_interval);
+                int counter = 0;
+                int base_idx = current_cp_idx - 1;
+                for (int i = current_cp_idx - 1; i < bs_control_points.size(); i++)
+                {
+                    counter++;
+                    if (counter > valid_count)
+                        break;
+                    bs_control_points[i] = control_points[i - base_idx];
+                }
+            }
+
             vector<double> get_current_knots(double time)
             {
                 vector<double> finite_knots;

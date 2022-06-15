@@ -272,24 +272,35 @@ namespace trajectory_server
             } 
         }
         
-        optimized_control_points = altered_distributed_control_points;
-
-        // vector<Eigen::Vector3d> get_bspline_control_points(double time)
-
-        // Print out the optimized_control_points    
-        // std::cout << "[main_server] optimized_control_points : ";
-        // for (int i = 0; i < optimized_control_points.size(); i++)
-        //     std::cout << "[" << KGRN << 
-        //         optimized_control_points[i].transpose() << KNRM << "] ";
-        // std::cout << std::endl;
-
         ts.update_control_points(altered_distributed_control_points);
         std::cout << "[main_server]" << KBLU << 
             " 6. update_control_points complete" << KNRM << std::endl;
 
+        vector<Eigen::Vector3d> local_points =
+            get_bspline_control_points(duration_secs);
+        
+        if ((int)local_points.size() > 0)
+        {
+            // std::cout << "[main_server] local_points ";
+            // for (int j = 0; j < local_points.size(); j++)
+            // {
+            //     std::cout << "[" << local_points[j].transpose() << "] "; 
+            // }
+            // std::cout << std::endl;
+
+            run_optimization(local_points);
+            update_bspline_local_control_points(
+                duration_secs, optimized_control_points);
+        }
+
+        std::cout << "[main_server]" << KBLU << 
+            " 7. optimized and update complete" << KNRM << std::endl;        
+
+
     }
 
-    void main_server::run_optimization()
+    void main_server::run_optimization(
+        vector<Eigen::Vector3d> local_control_points)
     {
         /** @brief Previous implementation summary **/
         // vector<Eigen::Vector3d> solver(
@@ -315,8 +326,7 @@ namespace trajectory_server
 
         // Set up parameters
         LBFGSBParam<double> param = ou.setup_lbfgs_param();
-        vector<Eigen::Vector3d> local_control_points =
-            get_bspline_control_points(duration_secs);
+                
         vector<double> time_points = 
             get_bspline_knots(duration_secs);
 
@@ -357,8 +367,10 @@ namespace trajectory_server
                 {
                     // If representing z
                     // Load in Lower and Upper bound
-                    lb(number_of_col*i + j) = min_height;
-                    ub(number_of_col*i + j) = max_height;
+                    // lb(number_of_col*i + j) = min_height;
+                    // ub(number_of_col*i + j) = max_height;
+                    lb(number_of_col*i + j) = -DBL_MAX;
+                    ub(number_of_col*i + j) = DBL_MAX;
                 }
 
             }
@@ -366,11 +378,18 @@ namespace trajectory_server
 
         // x will be overwritten to be the best point found
         double fx = 0; // Cost
+
+        std::lock_guard<std::mutex> others_lock(other_traj_mutex);
         opt.set_params_and_data(
-            get_bspline_knot_interval(), 3.0, 
+            _uav_idx,
+            get_bspline_knot_interval(), _max_acc, 
             obs_threshold, local_control_points, 
-            local_cloud, time_points);
+            local_cloud, time_points, other_agents);
         opt.set_weights(_weight_vector);
+
+        std::cout << "[main_server] single array size " << KBLU << 
+            x.size() << KNRM << std::endl;
+        
         
         int iter = solver.minimize(opt, x, fx, lb, ub);
 
@@ -381,19 +400,84 @@ namespace trajectory_server
             KBLU << iter << KNRM << "! F(x) " << 
             KBLU << fx << KNRM << "!" << std::endl;
         
-        vector<Eigen::Vector3d> cp;
-
+        optimized_control_points.clear();
+        bool early_break = false;
+        std::cout << "[main_server] optimized_control_points ";
         for (int j = 0; j < number_of_col; j++)
         {
+            // Squash the nan bug that will kill the program if no solution is found
+            if (isnan(x[number_of_col * 0 + j]) || 
+                isnan(x[number_of_col * 1 + j]) ||
+                isnan(x[number_of_col * 2 + j]))
+            {
+                std::cout << "[main_server] nan caught on " << 
+                    KRED << j << KNRM << std::endl;
+                early_break = true;
+                break;
+            }
             // Add the vector3d to the global_spline vector
             Eigen::Vector3d single_point = Eigen::Vector3d(
                 x[number_of_col * 0 + j], x[number_of_col * 1 + j], x[number_of_col * 2 + j]);
             
-            cp.push_back(single_point);
+            optimized_control_points.push_back(single_point);
+        }
+        std::cout << std::endl;
+
+        if (early_break)
+        {
+            std::cout << "[main_server] " << 
+                KRED << "Reject Optimization" << KNRM << std::endl;
+            optimized_control_points = local_control_points;
         }
 
-        // Update to bspline server
+    }
 
+    void main_server::update_other_agents(
+        int idx, vector<Eigen::Vector3d> cp, vector<double> knots)
+    {
+        std::lock_guard<std::mutex> others_lock(other_traj_mutex);
+        if (!other_agents.empty())
+        {
+            int vector_index = -1;
+            for (int i = 0; i < other_agents.size(); i++)
+            {
+                if (idx == other_agents[i].id)
+                {
+                    vector_index = i;
+                    break;
+                }
+            }
+
+            if (vector_index < 0)
+            {
+                trajectory_server::
+                    optimization_utils::other_agents_traj agent;
+
+                agent.id = idx;
+                agent.cp = cp;
+                agent.knots = knots;
+
+                other_agents.push_back(agent);
+                return;
+            }
+
+            
+            other_agents[vector_index].cp = cp;
+            other_agents[vector_index].knots = knots;
+            return;
+        }
+        else
+        {
+            trajectory_server::
+                optimization_utils::other_agents_traj agent;
+
+            agent.id = idx;
+            agent.cp = cp;
+            agent.knots = knots;
+
+            other_agents.push_back(agent);
+            return;
+        }
     }
 
     /** @brief Outdated **/

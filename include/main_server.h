@@ -66,6 +66,9 @@ namespace trajectory_server
             trajectory_server::bspline_server ts;
             trajectory_server::optimization_utils ou;
 
+            vector<trajectory_server::
+                optimization_utils::other_agents_traj> other_agents;
+
             Eigen::Vector3d start, end;
             Eigen::Vector3d direct_goal, current_control_point;
             Eigen::Vector3d current_pose;
@@ -83,13 +86,13 @@ namespace trajectory_server
             vector<Eigen::Vector3d> control_points, optimized_control_points;
             vector<double> previous_search_points_time;
 
-            int order, duration_secs;
+            int order, duration_secs, _uav_idx;
 
             double min_height, max_height;
             double obs_threshold;
             double search_radius;
             double intersection_idx;
-            double max_vel;
+            double max_vel, _max_acc;
             double sub_runtime_error, runtime_error;
             double leg_duration;
 
@@ -97,6 +100,7 @@ namespace trajectory_server
             std::mutex control_points_mutex;
             std::mutex pose_update_mutex;
             std::mutex cloud_mutex;
+            std::mutex other_traj_mutex;
 
             bool bs_timer_started = false;
 
@@ -136,7 +140,11 @@ namespace trajectory_server
             /** @brief Run the whole algorithm to acquire the control points */
             void complete_path_generation();
 
-            void run_optimization();
+            void run_optimization(
+                vector<Eigen::Vector3d> local_control_points);
+
+            void update_other_agents(
+                int idx, vector<Eigen::Vector3d> cp, vector<double> knots);
 
             /** @brief Update the local cloud data */
             void set_local_cloud(
@@ -173,8 +181,10 @@ namespace trajectory_server
             }
 
             /** @brief Initialize the optimization server */
-            void initialize_opt_server(vector<double> weight_vector)
+            void initialize_opt_server(
+                vector<double> weight_vector, double max_acc, int uav_idx)
             {
+                _uav_idx = uav_idx;
                 if (weight_vector.size() != 5)
                     return;
                 // Index for weights
@@ -184,6 +194,7 @@ namespace trajectory_server
                 // 3. _weight_static = weight_vector[3];
                 // 4. _weight_reci = weight_vector[4];
                 _weight_vector = weight_vector;
+                _max_acc = max_acc;
             }
 
             /** @brief Restart and reinitialize the start and end goals */
@@ -289,6 +300,13 @@ namespace trajectory_server
             vector<double> get_bspline_knots(double time)
             {
                 return ts.get_current_knots(time);
+            }
+
+            void update_bspline_local_control_points(
+                double time, vector<Eigen::Vector3d> control_points)
+            {
+                ts.update_local_control_points(
+                    time, control_points);
             }
     };
 
