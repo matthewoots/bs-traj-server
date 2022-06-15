@@ -275,11 +275,11 @@ namespace trajectory_server
         optimized_control_points = altered_distributed_control_points;
 
         // Print out the optimized_control_points    
-        std::cout << "[main_server] optimized_control_points : ";
-        for (int i = 0; i < optimized_control_points.size(); i++)
-            std::cout << "[" << KGRN << 
-                optimized_control_points[i].transpose() << KNRM << "] ";
-        std::cout << std::endl;
+        // std::cout << "[main_server] optimized_control_points : ";
+        // for (int i = 0; i < optimized_control_points.size(); i++)
+        //     std::cout << "[" << KGRN << 
+        //         optimized_control_points[i].transpose() << KNRM << "] ";
+        // std::cout << std::endl;
 
         ts.update_control_points(altered_distributed_control_points);
         std::cout << "[main_server]" << KBLU << 

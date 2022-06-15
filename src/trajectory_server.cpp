@@ -236,9 +236,9 @@ namespace trajectory_server
             // Update the overlapping control points to be used in the next search
             overlapping_control_points.push_back(
                 bs_control_points[current_cp_idx - order + i]);
-            std::cout << KCYN <<
-                current_cp_idx - order + i << KNRM << " [" << KCYN << 
-                bs_control_points[current_cp_idx - order + i].transpose() << KNRM << "] "; 
+            // std::cout << KCYN <<
+            //     current_cp_idx - order + i << KNRM << " [" << KCYN << 
+            //     bs_control_points[current_cp_idx - order + i].transpose() << KNRM << "] "; 
         }
         std::cout << std::endl;
         std::cout << "[bspline_server] current_cp_idx: " <<
