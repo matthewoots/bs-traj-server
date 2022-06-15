@@ -22,6 +22,7 @@
 #include <iostream>
 #include <chrono>
 #include <ctime>
+#include <random>
 #include <string>
 #include <unistd.h>
 #include <cstdlib>
@@ -65,6 +66,7 @@ namespace trajectory_server
             int id;
             vector<Eigen::Vector3d> cp;
             vector<double> knots;
+            system_clock::time_point origin;
         };
         
         LBFGSBParam<double> setup_lbfgs_param()
@@ -73,9 +75,9 @@ namespace trajectory_server
             LBFGSBParam<double> param;  // New parameter class
             param.epsilon = 1e-6;
             // param.delta = 1e-3;
-            param.max_iterations = 20; // Stable is 20
+            param.max_iterations = 10; // Stable is 20
             param.max_step = 0.20; // default is 1e-4
-            param.max_linesearch = 20; // Stable is 20
+            param.max_linesearch = 10; // Stable is 20
             // param.linesearch = LBFGS_LINESEARCH_BACKTRACKING_STRONG_WOLFE;
         
             return param;
@@ -112,6 +114,8 @@ namespace trajectory_server
             int n;
             int uav_idx;
 
+            std::random_device dev;
+
             vector<trajectory_server::
                 optimization_utils::other_agents_traj> other_agents;
 
@@ -123,6 +127,8 @@ namespace trajectory_server
 
             vector<Vector3d> reference_cp;
             vector<double> time_points;
+
+            system_clock::time_point origin_time;
 
             // obs_pcl will save up the points 
             vector<pcl::PointCloud<pcl::PointXYZ>::Ptr> obs_pcl;
@@ -198,20 +204,51 @@ namespace trajectory_server
                 VectorXd grad_single = VectorXd::Zero(col * 3);
 
                 double magnitude = 1;
-                const double CLEARANCE = protected_zone * 2.0;
+                const double CLEARANCE = protected_zone * 4.0;
                 constexpr double a = 2.0, b = 1.0, inv_a2 = 1 / a / a, inv_b2 = 1 / b / b;
 
                 for (int i = 0; i < cp.size(); i++)
                 {
-                    // std::cout << KYEL << "[bspline_optimization.h] knots " << i << " " << knots(i) << std::endl;
-                    double current_knot = knots[i];
+                    int32_t current_knot_micro = (int32_t)(knots[i] * pow(10,6));
+                    system_clock::time_point current_time_on_knot =
+                        origin_time + std::chrono::microseconds(current_knot_micro);
+                    
                     for (int j = 0; j < other_agents.size(); j++)
                     {
                         if (other_agents[j].id == uav_idx)
                             continue;
+                        
+                        std::mt19937 generator(dev());
+                        std::uniform_real_distribution<double> dis_middle(-1.0, 1.0);
+                        double random_factor = dis_middle(generator);
+                        
                         for (int k = 0; k < other_agents[j].cp.size(); k++)
                         {
+                            int32_t other_knot_micro = (int32_t)(
+                                other_agents[j].knots[k] * pow(10,6));
+                            system_clock::time_point other_time_on_knot =
+                                other_agents[j].origin + std::chrono::microseconds(
+                                other_knot_micro);
+
+                            double time_diff = duration<double>(
+                                current_time_on_knot - other_time_on_knot).count();
+                            
+                            // std::cout << KYEL << "[optimization_server.h] " << time_diff << KNRM << std::endl;
+
+                            if (time_diff > 2 * dt)
+                            {
+                                k += (int)floor(time_diff / dt);
+                                continue;
+                            }
+
+                            if (time_diff < -2 * dt)
+                                break;
+
                             Eigen::Vector3d dist_vec = cp[i] - other_agents[j].cp[k];
+                            double smallest_factor = 0.001;
+                            if (dist_vec.z() < smallest_factor && dist_vec.z() > -smallest_factor)
+                                dist_vec.z() = dist_vec.z() + random_factor * 1;
+
                             double ellip_dist = sqrt(dist_vec(2) * dist_vec(2) * inv_a2 + (dist_vec(0) * dist_vec(0) + dist_vec(1) * dist_vec(1)) * inv_b2);
                             
                             double dist_err = CLEARANCE - ellip_dist;
@@ -257,7 +294,8 @@ namespace trajectory_server
                 vector<Eigen::Vector3d> _reference_cp, 
                 pcl::PointCloud<pcl::PointXYZ>::Ptr _full_pcl,
                 vector<double> _time_points, 
-                vector<trajectory_server::optimization_utils::other_agents_traj> _other_agents)
+                vector<trajectory_server::optimization_utils::other_agents_traj> _other_agents,
+                system_clock::time_point _origin_time)
             {
                 uav_idx = _uav_idx;
                 dt = _dt; 
@@ -272,6 +310,7 @@ namespace trajectory_server
                 full_pcl = _full_pcl;
                 time_points = _time_points;
                 other_agents = _other_agents;
+                origin_time = _origin_time;
             }
 
             void set_weights(vector<double> weight_vector)

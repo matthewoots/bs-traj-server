@@ -164,6 +164,12 @@ namespace trajectory_server
                 stime = default_time;
             }
 
+            time_point<std::chrono::system_clock> 
+                get_chronos_start_time()
+            {
+                return stime;
+            }
+
             double get_end_time_for_path()
             {
                 return timespan[1];
@@ -182,6 +188,11 @@ namespace trajectory_server
             vector<Eigen::Vector3d> get_overlapping_cp()
             {
                 return overlapping_control_points;
+            }
+
+            vector<Eigen::Vector3d> get_bspline_control_points()
+            {
+                return bs_control_points;
             }
 
             void update_local_control_points(

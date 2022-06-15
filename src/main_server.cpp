@@ -279,7 +279,9 @@ namespace trajectory_server
         vector<Eigen::Vector3d> local_points =
             get_bspline_control_points(duration_secs);
         
-        if ((int)local_points.size() > 0)
+        if ((int)local_points.size() > 0 && (int)local_points.size() > order*2 &&
+            ts.get_duration_from_start_time() > get_bspline_knot_interval() &&
+            ts.get_duration_from_start_time() < pow(10,6))
         {
             // std::cout << "[main_server] local_points ";
             // for (int j = 0; j < local_points.size(); j++)
@@ -291,11 +293,17 @@ namespace trajectory_server
             run_optimization(local_points);
             update_bspline_local_control_points(
                 duration_secs, optimized_control_points);
+            std::cout << "[main_server]" << KBLU << 
+                " 7. optimized and update complete" << KNRM << std::endl;
+        }
+        else
+        {
+            std::cout << "[main_server]" << 
+                KRED << " 7. Not Running Optimization" << KNRM << std::endl;
         }
 
-        std::cout << "[main_server]" << KBLU << 
-            " 7. optimized and update complete" << KNRM << std::endl;        
-
+        altered_distributed_control_points.clear();
+        altered_distributed_control_points = ts.get_bspline_control_points();
 
     }
 
@@ -356,22 +364,22 @@ namespace trajectory_server
         {
             for (int j = 0; j < number_of_col; j++)
             {
-                if (i != 2)
-                {
+                // if (i != 2)
+                // {
                     // If representing x and y
                     // Load in max and min double lower and upper bound
                     lb(number_of_col*i + j) = -DBL_MAX;
                     ub(number_of_col*i + j) = DBL_MAX;
-                }
-                else
-                {
-                    // If representing z
-                    // Load in Lower and Upper bound
-                    // lb(number_of_col*i + j) = min_height;
-                    // ub(number_of_col*i + j) = max_height;
-                    lb(number_of_col*i + j) = -DBL_MAX;
-                    ub(number_of_col*i + j) = DBL_MAX;
-                }
+                // }
+                // else
+                // {
+                //     // If representing z
+                //     // Load in Lower and Upper bound
+                //     // lb(number_of_col*i + j) = min_height;
+                //     // ub(number_of_col*i + j) = max_height;
+                //     lb(number_of_col*i + j) = -DBL_MAX;
+                //     ub(number_of_col*i + j) = DBL_MAX;
+                // }
 
             }
         }
@@ -384,7 +392,8 @@ namespace trajectory_server
             _uav_idx,
             get_bspline_knot_interval(), _max_acc, 
             obs_threshold, local_control_points, 
-            local_cloud, time_points, other_agents);
+            local_cloud, time_points, other_agents,
+            get_bspline_chronos_start_time());
         opt.set_weights(_weight_vector);
 
         std::cout << "[main_server] single array size " << KBLU << 
@@ -419,6 +428,7 @@ namespace trajectory_server
             Eigen::Vector3d single_point = Eigen::Vector3d(
                 x[number_of_col * 0 + j], x[number_of_col * 1 + j], x[number_of_col * 2 + j]);
             
+            // std::cout << "[" << single_point.transpose() << "] "; 
             optimized_control_points.push_back(single_point);
         }
         std::cout << std::endl;
@@ -433,7 +443,8 @@ namespace trajectory_server
     }
 
     void main_server::update_other_agents(
-        int idx, vector<Eigen::Vector3d> cp, vector<double> knots)
+        int idx, vector<Eigen::Vector3d> cp, vector<double> knots,
+        system_clock::time_point origin_time)
     {
         std::lock_guard<std::mutex> others_lock(other_traj_mutex);
         if (!other_agents.empty())
@@ -456,6 +467,7 @@ namespace trajectory_server
                 agent.id = idx;
                 agent.cp = cp;
                 agent.knots = knots;
+                agent.origin = origin_time;
 
                 other_agents.push_back(agent);
                 return;
@@ -464,6 +476,7 @@ namespace trajectory_server
             
             other_agents[vector_index].cp = cp;
             other_agents[vector_index].knots = knots;
+            other_agents[vector_index].origin = origin_time;
             return;
         }
         else
@@ -474,6 +487,7 @@ namespace trajectory_server
             agent.id = idx;
             agent.cp = cp;
             agent.knots = knots;
+            agent.origin = origin_time;
 
             other_agents.push_back(agent);
             return;

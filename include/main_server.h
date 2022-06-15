@@ -144,7 +144,8 @@ namespace trajectory_server
                 vector<Eigen::Vector3d> local_control_points);
 
             void update_other_agents(
-                int idx, vector<Eigen::Vector3d> cp, vector<double> knots);
+                int idx, vector<Eigen::Vector3d> cp, vector<double> knots,
+                system_clock::time_point origin_time);
 
             /** @brief Update the local cloud data */
             void set_local_cloud(
@@ -290,6 +291,12 @@ namespace trajectory_server
             double get_bspline_knot_interval()
             {
                 return ts.get_knot_interval();
+            }
+
+            time_point<std::chrono::system_clock> 
+                get_bspline_chronos_start_time()
+            {
+                return ts.get_chronos_start_time();
             }
 
             vector<Eigen::Vector3d> get_bspline_control_points(double time)
