@@ -143,24 +143,24 @@ namespace trajectory_server
             current_control_point = start;
         }
 
-        std::cout << "[main_server] starting from [" <<
-            KBLU << current_control_point.transpose() << KNRM << "] to ["
-            KBLU << end.transpose() << KNRM << "]" << std::endl;
+        // std::cout << "[main_server] starting from [" <<
+        //     KBLU << current_control_point.transpose() << KNRM << "] to ["
+        //     KBLU << end.transpose() << KNRM << "]" << std::endl;
 
         // Setup the RRT server parameters 
         fe_rrt_server.reset_parameters(
             vector<Eigen::Vector4d>(),
             min_height, max_height, obs_threshold,
             sub_runtime_error, runtime_error);
-        std::cout << "[main_server]" << KBLU <<  
-            " 1. reset_parameters complete" << KNRM << std::endl;
+        // std::cout << "[main_server]" << KBLU <<  
+        //     " 1. reset_parameters complete" << KNRM << std::endl;
 
         std::lock_guard<std::mutex> cloud_lock(cloud_mutex);
 
         // Check for any collisions with the local map, and update the valid previous search nodes 
         check_and_update_search(local_cloud, current_control_point);
-        std::cout << "[main_server]" << KBLU << 
-            " 2. check_and_update_search complete" << KNRM << std::endl;
+        // std::cout << "[main_server]" << KBLU << 
+        //     " 2. check_and_update_search complete" << KNRM << std::endl;
 
         bool bypass = false;
         time_point<std::chrono::system_clock> 
@@ -207,8 +207,8 @@ namespace trajectory_server
             // Find and update with newly found distributed control points
             distributed_control_points.clear();
             distributed_control_points = get_local_control_points();
-            std::cout << "[main_server]" << KBLU << 
-                " 4. update_distributed_cp complete" << KNRM << std::endl;
+            // std::cout << "[main_server]" << KBLU << 
+            //     " 4. update_distributed_cp complete" << KNRM << std::endl;
         
             leg_duration = 
                 ((double)distributed_control_points.size() + order) *
@@ -220,8 +220,8 @@ namespace trajectory_server
             // control points from the previous iteration
             altered_distributed_control_points.clear();
             altered_distributed_control_points = concatenate_distributed_cp();
-            std::cout << "[main_server]" << KBLU << 
-                " 5. concatenate_distributed_cp complete" << KNRM << std::endl;
+            // std::cout << "[main_server]" << KBLU << 
+            //     " 5. concatenate_distributed_cp complete" << KNRM << std::endl;
         
             // Check whether there is a need to clamp the start when time is 0
             if ((global_search_path[0] - start).norm() < 0.0001 &&
@@ -273,8 +273,8 @@ namespace trajectory_server
         }
         
         ts.update_control_points(altered_distributed_control_points);
-        std::cout << "[main_server]" << KBLU << 
-            " 6. update_control_points complete" << KNRM << std::endl;
+        // std::cout << "[main_server]" << KBLU << 
+        //     " 6. update_control_points complete" << KNRM << std::endl;
 
         vector<Eigen::Vector3d> local_points =
             get_bspline_control_points(duration_secs);
@@ -360,26 +360,28 @@ namespace trajectory_server
         // Setup Lower Bound and upper bound for now we take z to be clamped
         Eigen::VectorXd lb = VectorXd::Zero(number_of_col * number_of_row);
         Eigen::VectorXd ub = VectorXd::Zero(number_of_col * number_of_row);
+        
+        // std::cout << "[main_server] min_max height " << KBLU << 
+        //     min_height << " " << max_height << KNRM << std::endl;
+        
         for (int i = 0; i < number_of_row; i++)
         {
             for (int j = 0; j < number_of_col; j++)
             {
-                // if (i != 2)
-                // {
+                if (i != 2)
+                {
                     // If representing x and y
                     // Load in max and min double lower and upper bound
                     lb(number_of_col*i + j) = -DBL_MAX;
                     ub(number_of_col*i + j) = DBL_MAX;
-                // }
-                // else
-                // {
-                //     // If representing z
-                //     // Load in Lower and Upper bound
-                //     // lb(number_of_col*i + j) = min_height;
-                //     // ub(number_of_col*i + j) = max_height;
-                //     lb(number_of_col*i + j) = -DBL_MAX;
-                //     ub(number_of_col*i + j) = DBL_MAX;
-                // }
+                }
+                else
+                {
+                    // If representing z
+                    // Load in Lower and Upper bound
+                    lb(number_of_col*i + j) = min_height;
+                    ub(number_of_col*i + j) = max_height;
+                }
 
             }
         }
@@ -396,8 +398,8 @@ namespace trajectory_server
             get_bspline_chronos_start_time());
         opt.set_weights(_weight_vector);
 
-        std::cout << "[main_server] single array size " << KBLU << 
-            x.size() << KNRM << std::endl;
+        // std::cout << "[main_server] single array size " << KBLU << 
+        //     x.size() << KNRM << std::endl;
         
         
         int iter = solver.minimize(opt, x, fx, lb, ub);

@@ -214,10 +214,10 @@ namespace trajectory_server
                 current_knot_time = timespan[0] + (i-1) * knot_interval;
                 // Time at knot - 1 + order number to fulfill the index
                 current_cp_idx = i + order - 1;
-                std::cout << "[bspline_server] idx: " <<
-                    KBLU << current_cp_idx << KNRM << " time_at_knot: " <<
-                    KBLU << time_at_knot << KNRM << "s" << " running_time: " <<
-                    KBLU << running_time << KNRM << std::endl;
+                // std::cout << "[bspline_server] idx: " <<
+                //     KBLU << current_cp_idx << KNRM << " time_at_knot: " <<
+                //     KBLU << time_at_knot << KNRM << "s" << " running_time: " <<
+                //     KBLU << running_time << KNRM << std::endl;
                 break;
             }
         }
@@ -230,7 +230,7 @@ namespace trajectory_server
         int size_of_overlapping_cp = order; 
 
         overlapping_control_points.clear();
-        std::cout << "[bspline_server] ";
+        // std::cout << "[bspline_server] ";
         for (int i = 0; i < size_of_overlapping_cp; i++)
         {
             // Update the overlapping control points to be used in the next search
@@ -240,9 +240,9 @@ namespace trajectory_server
             //     current_cp_idx - order + i << KNRM << " [" << KCYN << 
             //     bs_control_points[current_cp_idx - order + i].transpose() << KNRM << "] "; 
         }
-        std::cout << std::endl;
-        std::cout << "[bspline_server] current_cp_idx: " <<
-            KCYN << bs_control_points[current_cp_idx].transpose() << KNRM << std::endl;
+        // std::cout << std::endl;
+        // std::cout << "[bspline_server] current_cp_idx: " <<
+        //     KCYN << bs_control_points[current_cp_idx].transpose() << KNRM << std::endl;
 
         return bs_control_points[current_cp_idx];
     }

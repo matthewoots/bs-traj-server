@@ -35,6 +35,7 @@
 #include <pcl/conversions.h>
 #include <pcl/point_cloud.h>
 #include <pcl/filters/crop_box.h>
+#include <pcl/kdtree/kdtree_flann.h>
 
 #include "LBFGSB.h"
 #include "common_utils.h"
@@ -187,6 +188,52 @@ namespace trajectory_server
                 fx_smooth = cost;
             }
 
+            void feasibilityCost(vector<Eigen::Vector3d> cp)
+            {
+                /*
+                * Soft limit on the norm of time derivatives 
+                * such as velocity, acceleration, jerk and snap.
+                */
+                double ts_inv2 = 1 / dt / dt;
+                double cost = 0;
+                int col = (int)cp.size();
+                grad_feas = Eigen::VectorXd::Zero(col * 3);
+
+                Eigen::MatrixXd gradient = Eigen::MatrixXd::Zero(3,col);
+                Eigen::VectorXd grad_single = Eigen::VectorXd::Zero(col * 3);
+
+                /* Check all instances with acceleration limit */
+                for (int i = 0; i < cp.size() - 2; i++)
+                {
+                    Eigen::Vector3d ai = (cp[i + 2] - 2 * cp[i+1] + cp[i]) * ts_inv2;
+                    for (int j = 0; j < 3; j++)
+                    {
+                        if (ai(j) > max_acc)
+                        {
+                            cost += pow(ai(j) - max_acc, 2);
+
+                            gradient(j, i + 0) += 2 * (ai(j) - max_acc) * ts_inv2;
+                            gradient(j, i + 1) += (-4 * (ai(j) - max_acc) * ts_inv2);
+                            gradient(j, i + 2) += 2 * (ai(j) - max_acc) * ts_inv2;
+                        }
+                        else if (ai(j) < -max_acc)
+                        {
+                            cost += pow(ai(j) + max_acc, 2);
+
+                            gradient(j, i + 0) += 2 * (ai(j) + max_acc) * ts_inv2;
+                            gradient(j, i + 1) += (-4 * (ai(j) + max_acc) * ts_inv2);
+                            gradient(j, i + 2) += 2 * (ai(j) + max_acc) * ts_inv2;
+                        }
+                        else {}
+                    }
+                }
+                for (int i = 0; i < 3; i++)
+                    for (int j = 0; j < col; j++)
+                        grad_feas(col * i + j) = gradient(i,j);
+
+                fx_feas = cost;
+            }
+
             void reciprocalAvoidanceCost(vector<Eigen::Vector3d> cp, vector<double> knots)
             {
                 /*
@@ -204,8 +251,9 @@ namespace trajectory_server
                 VectorXd grad_single = VectorXd::Zero(col * 3);
 
                 double magnitude = 1;
-                const double CLEARANCE = protected_zone * 4.0;
-                constexpr double a = 2.0, b = 1.0, inv_a2 = 1 / a / a, inv_b2 = 1 / b / b;
+                const double CLEARANCE = protected_zone * 5.0;
+                constexpr double a = 1.0, b = 1.0, inv_a2 = 1 / a / a, inv_b2 = 1 / b / b;
+                int affected_range = 2;
 
                 for (int i = 0; i < cp.size(); i++)
                 {
@@ -217,11 +265,20 @@ namespace trajectory_server
                     {
                         if (other_agents[j].id == uav_idx)
                             continue;
+
+                        // double origin_diff = duration<double>(other_agents[j].origin - origin_time).count();
+                        // std::cout << "[optimization_server.h] uav " << uav_idx << " on " <<
+                        //     other_agents[j].id << " " << KYEL << origin_diff << KNRM << std::endl;
                         
                         std::mt19937 generator(dev());
-                        std::uniform_real_distribution<double> dis_middle(-1.0, 1.0);
+                        std::uniform_real_distribution<double> dis_middle(-0.3, 0.3);
                         double random_factor = dis_middle(generator);
+                        if (random_factor > 0.0 && random_factor < 0.1)
+                            random_factor = 0.1;
                         
+                        if (random_factor < 0.0 && random_factor > -0.1)
+                            random_factor = -0.1;
+
                         for (int k = 0; k < other_agents[j].cp.size(); k++)
                         {
                             int32_t other_knot_micro = (int32_t)(
@@ -235,19 +292,21 @@ namespace trajectory_server
                             
                             // std::cout << KYEL << "[optimization_server.h] " << time_diff << KNRM << std::endl;
 
-                            if (time_diff > 2 * dt)
+                            if (time_diff > 2.0 * dt)
                             {
-                                k += (int)floor(time_diff / dt);
+                                k += (int)abs(floor(time_diff / dt));
                                 continue;
                             }
 
-                            if (time_diff < -2 * dt)
+                            if (time_diff < -2.0 * dt)
                                 break;
 
                             Eigen::Vector3d dist_vec = cp[i] - other_agents[j].cp[k];
                             double smallest_factor = 0.001;
                             if (dist_vec.z() < smallest_factor && dist_vec.z() > -smallest_factor)
-                                dist_vec.z() = dist_vec.z() + random_factor * 1;
+                            {
+                                dist_vec.z() = dist_vec.z() + random_factor * 0.3;
+                            }
 
                             double ellip_dist = sqrt(dist_vec(2) * dist_vec(2) * inv_a2 + (dist_vec(0) * dist_vec(0) + dist_vec(1) * dist_vec(1)) * inv_b2);
                             
@@ -269,6 +328,17 @@ namespace trajectory_server
                                 //     << " magnitude " << magnitude << " dist_vec " << dist_vec.norm() << std::endl;
                                 cost = cost + magnitude * pow(dist_err, 2);
                                 gradient.col(i) = gradient.col(i) + magnitude * (Coeff.array() * dist_vec.array()).matrix();
+                                if (i > affected_range && i < cp.size() - affected_range)
+                                {
+                                    for (int l = 0; l < affected_range*2+1; l++)
+                                    {
+                                        if (l == affected_range)
+                                            continue;
+                                        cost = cost + 1 * pow(dist_err, 2);
+                                        gradient.col(i - affected_range + l) = 
+                                            gradient.col(i - affected_range + l) + 1 * (Coeff.array() * dist_vec.array()).matrix();
+                                    }
+                                }
                             }
                         }
                         
@@ -281,6 +351,58 @@ namespace trajectory_server
                         grad_reci(col * i + j) = gradient(i,j);
 
                 fx_reci = cost;
+
+            }
+
+            void staticCollisionCost(vector<Eigen::Vector3d> cp)
+            {
+                double cost = 0;
+                int col = (int)cp.size();
+                grad_static = VectorXd::Zero(col * 3);
+
+                MatrixXd gradient = MatrixXd::Zero(3,col);
+                VectorXd grad_single = VectorXd::Zero(col * 3);
+
+                double pz_expansion_factor = 2.5;
+
+                for (int i = 0; i < cp.size(); i++)
+                { 
+                    // For each iteration we should calc this before hand to reduce the load
+                    pcl::PointCloud<pcl::PointXYZ>::Ptr tmp_obs(new pcl::PointCloud<pcl::PointXYZ>);
+                    tmp_obs = obs_pcl[i];
+
+                    if (tmp_obs->points.size() == 0)
+                        continue;
+
+                    vector<Vector3d> kd_points = kdtree_find_points_pcl(cp[i], tmp_obs, 
+                        pz_expansion_factor * protected_zone, 10);
+
+                    if (kd_points.size() == 0)
+                        continue;
+
+                    // ** Size is too big and optimization may take a few seconds
+                    for (int j = 0; j < kd_points.size(); j++)
+                    {
+                        Vector3d diff = kd_points[j] - cp[i];
+                        Vector3d diff_dir = diff / diff.norm();
+                        double sq_diff = pow(diff.norm(), 2);
+                        double sq_protected = pow(pz_expansion_factor * protected_zone, 2);
+                        gradient.col(i) = gradient.col(i) + diff_dir * (sq_protected - sq_diff);
+                        cost = cost + (sq_protected - sq_diff);
+                        // printf("%s[bspline_optimization.h] cost %lf gradient [%lf %lf %lf]!\n", KBLU, cost, 
+                            // gradient.col(i).x(), gradient.col(i).y(), gradient.col(i).z());
+                    }               
+                    // printf("%s[bspline_optimization.h] updated cost and gradient!\n", KBLU);
+                    // printf("%s[bspline_optimization.h] SA : single point Run Time %lf!\n", KCYN, ros::Time::now().toSec() - prev_indi_points);
+                }
+
+                for (int i = 0; i < 3; i++)
+                    for (int j = 0; j < col; j++)
+                        grad_static(col * i + j) = gradient(i,j);
+
+                // std::cout << KYEL << "[bspline_optimization.h] S " << grad_static.transpose() << std::endl;
+
+                fx_static = cost;
 
             }
 
@@ -363,21 +485,78 @@ namespace trajectory_server
 
                 smoothnessCost(cp);
                 reciprocalAvoidanceCost(cp, time_points);
+                feasibilityCost(cp);
 
                 fx = weight_smooth * fx_smooth +
-                    // weight_feas * fx_feas +
+                    weight_feas * fx_feas +
                     // weight_term * fx_term +
                     // weight_static * fx_static +
                     weight_reci * fx_reci;
 
                 for (int i = 0; i < col*3; i++)
                     grad[i] = weight_smooth * grad_smooth(i) +
-                        // weight_feas * grad_feas(i) + 
+                        weight_feas * grad_feas(i) + 
                         // weight_term * grad_term(i) +
                         // weight_static * grad_static(i) +
                         weight_reci * grad_reci(i);
                 
                 return fx;
+            }
+
+            vector<Vector3d> kdtree_find_points_pcl(Vector3d point, pcl::PointCloud<pcl::PointXYZ>::Ptr _obs,
+            double c, int K)
+            {
+                pcl::KdTreeFLANN<pcl::PointXYZ> kdtree;
+                vector<Vector3d> points;
+
+                kdtree.setInputCloud(_obs);
+
+                // Maybe we need to check to see any number here is NA, or inf
+
+                pcl::PointXYZ searchPoint;
+                searchPoint.x = point.x();
+                searchPoint.y = point.y();
+                searchPoint.z = point.z();
+
+                // if (isnan(searchPoint.x) ||
+                //     isnan(searchPoint.y) ||
+                //     isnan(searchPoint.z) ||
+                //     isinf(searchPoint.x) ||
+                //     isinf(searchPoint.y) ||
+                //     isinf(searchPoint.z) )
+                // {
+                //     printf("[kdtree_pcl] Found a point with inf or nan!");
+                //     std::cout << searchPoint.x << "," << 
+                //     searchPoint.y << "," << searchPoint.z << std::endl;
+                //     return points;
+                // }
+
+                // K nearest neighbor search
+
+                std::vector<int> pointIdxKNNSearch(K);
+                std::vector<float> pointKNNSquaredDistance(K);
+
+                // float radius = 256.0f * rand () / (RAND_MAX + 1.0f);
+
+                float radius = (float)c;
+
+                if ( kdtree.nearestKSearch (searchPoint, K, pointIdxKNNSearch, pointKNNSquaredDistance) > 0 )
+                {
+                    // for (std::size_t i = 0; i < pointIdxRadiusSearch.size (); ++i)
+                    for (std::size_t i = 0; i < pointIdxKNNSearch.size (); ++i)
+                    {
+                        Vector3d kd_point;
+                        // When the point is larger than the radius, we do not consider it
+                        if (pointKNNSquaredDistance[i] - pow(radius,2) > 0)
+                            continue;
+                        kd_point.x() = (*_obs)[ pointIdxKNNSearch[i] ].x; 
+                        kd_point.y() = (*_obs)[ pointIdxKNNSearch[i] ].y;
+                        kd_point.z() = (*_obs)[ pointIdxKNNSearch[i] ].z;
+                        points.push_back(kd_point);
+                    }
+                }
+
+                return points;
             }
     };
 

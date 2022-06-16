@@ -173,12 +173,15 @@ namespace trajectory_server
             /** @brief Initialize the RRT server */
             void initialize_rrt_server(
                 double _sub_runtime_error, double _runtime_error,
-                double xybuffer, double zbuffer, double passage_size)
+                double xybuffer, double zbuffer, double passage_size,
+                double _min_height, double _max_height)
             {
                 fe_rrt_server.setup_buffers(xybuffer, zbuffer, passage_size);
 
                 sub_runtime_error = _sub_runtime_error;
                 runtime_error = _runtime_error;
+                min_height = _min_height;
+                max_height = _max_height;
             }
 
             /** @brief Initialize the optimization server */

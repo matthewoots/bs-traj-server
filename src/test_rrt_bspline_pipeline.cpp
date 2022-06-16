@@ -105,7 +105,8 @@ int main()
         "initialize_rrt_server" << KNRM << std::endl;
     ms.initialize_rrt_server(
         _sub_runtime_error, _runtime_error,
-        _xybuffer, _zbuffer, _passage_size);
+        _xybuffer, _zbuffer, _passage_size,
+        _min_height, _max_height);
 
     std::cout << "[pipeline] " << KBLU << 
         "complete_path_generation" << KNRM << std::endl;
