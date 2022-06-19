@@ -120,10 +120,10 @@ namespace trajectory_server
             vector<trajectory_server::
                 optimization_utils::other_agents_traj> other_agents;
 
-            double weight_smooth, weight_feas, weight_term, weight_static, weight_reci;
+            double weight_smooth, weight_feas, weight_static, weight_reci;
             
-            double fx_smooth, fx_feas, fx_term, fx_static, fx_reci;
-            VectorXd grad_smooth, grad_feas, grad_term, grad_static, grad_reci;
+            double fx_smooth, fx_feas, fx_static, fx_reci;
+            VectorXd grad_smooth, grad_feas, grad_static, grad_reci;
             double max_acc, protected_zone, dt;
 
             vector<Vector3d> reference_cp;
@@ -250,8 +250,7 @@ namespace trajectory_server
                 MatrixXd gradient = MatrixXd::Zero(3,col);
                 VectorXd grad_single = VectorXd::Zero(col * 3);
 
-                double magnitude = 1;
-                const double CLEARANCE = protected_zone * 5.0;
+                const double CLEARANCE = protected_zone * 4.5;
                 constexpr double a = 1.0, b = 1.0, inv_a2 = 1 / a / a, inv_b2 = 1 / b / b;
                 int affected_range = 2;
 
@@ -270,8 +269,10 @@ namespace trajectory_server
                         // std::cout << "[optimization_server.h] uav " << uav_idx << " on " <<
                         //     other_agents[j].id << " " << KYEL << origin_diff << KNRM << std::endl;
                         
+                        double multiplier = 0.3;
+                        double smallest_factor = 0.001;
                         std::mt19937 generator(dev());
-                        std::uniform_real_distribution<double> dis_middle(-0.3, 0.3);
+                        std::uniform_real_distribution<double> dis_middle(-multiplier, multiplier);
                         double random_factor = dis_middle(generator);
                         if (random_factor > 0.0 && random_factor < 0.1)
                             random_factor = 0.1;
@@ -302,10 +303,12 @@ namespace trajectory_server
                                 break;
 
                             Eigen::Vector3d dist_vec = cp[i] - other_agents[j].cp[k];
-                            double smallest_factor = 0.001;
+                            
+                            double z_additional = 0.0;
                             if (dist_vec.z() < smallest_factor && dist_vec.z() > -smallest_factor)
                             {
-                                dist_vec.z() = dist_vec.z() + random_factor * 0.3;
+                                dist_vec.z() = dist_vec.z() + random_factor * multiplier;
+                                z_additional = random_factor * multiplier;
                             }
 
                             double ellip_dist = sqrt(dist_vec(2) * dist_vec(2) * inv_a2 + (dist_vec(0) * dist_vec(0) + dist_vec(1) * dist_vec(1)) * inv_b2);
@@ -315,7 +318,7 @@ namespace trajectory_server
                             Vector3d Coeff = Vector3d(
                                 -2 * (CLEARANCE / ellip_dist - 1) * inv_b2,
                                 -2 * (CLEARANCE / ellip_dist - 1) * inv_b2,
-                                -2 * (CLEARANCE / ellip_dist - 1) * inv_a2
+                                -2 * ((CLEARANCE + z_additional) / ellip_dist - 1) * inv_a2
                             );
 
                             if (dist_err < 0 || dist_vec.norm() == 0)
@@ -326,8 +329,8 @@ namespace trajectory_server
                             {
                                 // std::cout << KYEL << "[bspline_optimization.h] dist_err " << dist_err 
                                 //     << " magnitude " << magnitude << " dist_vec " << dist_vec.norm() << std::endl;
-                                cost = cost + magnitude * pow(dist_err, 2);
-                                gradient.col(i) = gradient.col(i) + magnitude * (Coeff.array() * dist_vec.array()).matrix();
+                                cost = cost + 1 * pow(dist_err, 2);
+                                gradient.col(i) = gradient.col(i) + 1 * (Coeff.array() * dist_vec.array()).matrix();
                                 if (i > affected_range && i < cp.size() - affected_range)
                                 {
                                     for (int l = 0; l < affected_range*2+1; l++)
@@ -440,21 +443,19 @@ namespace trajectory_server
                 // Index for weights
                 // 0. _weight_smooth = weight_vector[0]; 
                 // 1. _weight_feas = weight_vector[1];
-                // 2. _weight_term = weight_vector[2];
-                // 3. _weight_static = weight_vector[3];
-                // 4. _weight_reci = weight_vector[4];
+                // 2. _weight_static = weight_vector[2];
+                // 3. _weight_reci = weight_vector[3];
                 weight_smooth = weight_vector[0]; 
                 weight_feas = weight_vector[1];
-                weight_term = weight_vector[2];
-                weight_static = weight_vector[3];
-                weight_reci = weight_vector[4];
+                weight_static = weight_vector[2];
+                weight_reci = weight_vector[3];
             }
 
             double operator()(const VectorXd& x, VectorXd& grad)
             {
                 double fx = 0.0;            
                 obs_pcl.clear();
-                double factor = 2.0;
+                double factor = 3.0;
                 Eigen::Vector3d dimensions = Eigen::Vector3d(
                     factor * protected_zone,
                     factor * protected_zone,
@@ -486,18 +487,17 @@ namespace trajectory_server
                 smoothnessCost(cp);
                 reciprocalAvoidanceCost(cp, time_points);
                 feasibilityCost(cp);
+                staticCollisionCost(cp);
 
                 fx = weight_smooth * fx_smooth +
                     weight_feas * fx_feas +
-                    // weight_term * fx_term +
-                    // weight_static * fx_static +
+                    weight_static * fx_static +
                     weight_reci * fx_reci;
 
                 for (int i = 0; i < col*3; i++)
                     grad[i] = weight_smooth * grad_smooth(i) +
                         weight_feas * grad_feas(i) + 
-                        // weight_term * grad_term(i) +
-                        // weight_static * grad_static(i) +
+                        weight_static * grad_static(i) +
                         weight_reci * grad_reci(i);
                 
                 return fx;
