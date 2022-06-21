@@ -392,7 +392,7 @@ namespace trajectory_server
         std::lock_guard<std::mutex> others_lock(other_traj_mutex);
         opt.set_params_and_data(
             _uav_idx,
-            get_bspline_knot_interval(), _max_acc, 
+            get_bspline_knot_interval(), _max_acc, max_vel, 
             obs_threshold, local_control_points, 
             local_cloud, time_points, other_agents,
             get_bspline_chronos_start_time());

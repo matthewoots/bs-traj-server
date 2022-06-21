@@ -120,11 +120,11 @@ namespace trajectory_server
             vector<trajectory_server::
                 optimization_utils::other_agents_traj> other_agents;
 
-            double weight_smooth, weight_feas, weight_term, weight_static, weight_reci;
+            double weight_smooth, weight_feas, weight_static, weight_reci;
             
-            double fx_smooth, fx_feas, fx_term, fx_static, fx_reci;
-            VectorXd grad_smooth, grad_feas, grad_term, grad_static, grad_reci;
-            double max_acc, protected_zone, dt;
+            double fx_smooth, fx_feas, fx_static, fx_reci;
+            VectorXd grad_smooth, grad_feas, grad_static, grad_reci;
+            double max_acc, max_vel, protected_zone, dt;
 
             vector<Vector3d> reference_cp;
             vector<double> time_points;
@@ -153,10 +153,14 @@ namespace trajectory_server
                 Eigen::VectorXd grad_single = Eigen::VectorXd::Zero(col * 3);
 
                 /* 3rd derivative, Jerk */
+                /* 2nd derivative, Acceleration */
+                // Reduce running it 2 times
                 for (int i = 0; i < (int)cp.size() - 3; i++)
                 {
                     Eigen::Vector3d jerk = 
                         cp[i + 3] - 3 * cp[i + 2] + 3 * cp[i + 1] - cp[i];
+                    Eigen::Vector3d acc = 
+                        cp[i + 2] - 2 * cp[i + 1] + cp[i];
 
                     cost = cost + pow(jerk.norm(), 2);
                     Eigen::Vector3d tmp_j = 2.0 * jerk;
@@ -165,13 +169,6 @@ namespace trajectory_server
                     gradient.col(i + 1) += (3.0 * tmp_j);
                     gradient.col(i + 2) += (-3.0 * tmp_j);
                     gradient.col(i + 3) += (tmp_j);
-                }
-                
-                /* 2nd derivative, Acceleration */
-                for (int i = 0; i < (int)cp.size() - 2; i++)
-                {   
-                    Eigen::Vector3d acc = 
-                        cp[i + 2] - 2 * cp[i + 1] + cp[i];
 
                     cost = cost + pow(acc.norm(), 2);
                     Vector3d tmp_a = 2.0 * acc;
@@ -203,9 +200,12 @@ namespace trajectory_server
                 Eigen::VectorXd grad_single = Eigen::VectorXd::Zero(col * 3);
 
                 /* Check all instances with acceleration limit */
+                /* Check all instances with velocity limit */
+                // Reduce running it 2 times
                 for (int i = 0; i < cp.size() - 2; i++)
                 {
                     Eigen::Vector3d ai = (cp[i + 2] - 2 * cp[i+1] + cp[i]) * ts_inv2;
+                    Eigen::Vector3d vi = (cp[i + 1] - cp[i]) / dt;
                     for (int j = 0; j < 3; j++)
                     {
                         if (ai(j) > max_acc)
@@ -225,8 +225,25 @@ namespace trajectory_server
                             gradient(j, i + 2) += 2 * (ai(j) + max_acc) * ts_inv2;
                         }
                         else {}
+
+                        if (vi(j) > max_vel)
+                        {
+                            cost += pow(vi(j) - max_vel, 2) * ts_inv2;
+
+                            gradient(j, i + 0) += -2 * (vi(j) - max_vel) / dt * ts_inv2;
+                            gradient(j, i + 1) += 2 * (vi(j) - max_vel) / dt * ts_inv2;
+                        }
+                        else if (vi(j) < -max_vel)
+                        {
+                            cost += pow(vi(j) + max_vel, 2) * ts_inv2;
+
+                            gradient(j, i + 0) += -2 * (vi(j) + max_vel) / dt * ts_inv2;
+                            gradient(j, i + 1) += 2 * (vi(j) + max_vel) / dt * ts_inv2;
+                        }
+                        else {}
                     }
                 }
+
                 for (int i = 0; i < 3; i++)
                     for (int j = 0; j < col; j++)
                         grad_feas(col * i + j) = gradient(i,j);
@@ -250,10 +267,9 @@ namespace trajectory_server
                 MatrixXd gradient = MatrixXd::Zero(3,col);
                 VectorXd grad_single = VectorXd::Zero(col * 3);
 
-                double magnitude = 1;
-                const double CLEARANCE = protected_zone * 5.0;
+                const double CLEARANCE = protected_zone * 2.5;
                 constexpr double a = 1.0, b = 1.0, inv_a2 = 1 / a / a, inv_b2 = 1 / b / b;
-                int affected_range = 2;
+                int affected_range = 1;
 
                 for (int i = 0; i < cp.size(); i++)
                 {
@@ -263,15 +279,17 @@ namespace trajectory_server
                     
                     for (int j = 0; j < other_agents.size(); j++)
                     {
-                        if (other_agents[j].id == uav_idx)
-                            continue;
+                        if (other_agents[j].id == uav_idx) continue;
+                        if (other_agents[j].cp.empty()) continue;
 
                         // double origin_diff = duration<double>(other_agents[j].origin - origin_time).count();
                         // std::cout << "[optimization_server.h] uav " << uav_idx << " on " <<
                         //     other_agents[j].id << " " << KYEL << origin_diff << KNRM << std::endl;
                         
+                        double multiplier = 0.3;
+                        double smallest_factor = 0.001;
                         std::mt19937 generator(dev());
-                        std::uniform_real_distribution<double> dis_middle(-0.3, 0.3);
+                        std::uniform_real_distribution<double> dis_middle(-multiplier, multiplier);
                         double random_factor = dis_middle(generator);
                         if (random_factor > 0.0 && random_factor < 0.1)
                             random_factor = 0.1;
@@ -279,33 +297,35 @@ namespace trajectory_server
                         if (random_factor < 0.0 && random_factor > -0.1)
                             random_factor = -0.1;
 
-                        for (int k = 0; k < other_agents[j].cp.size(); k++)
+                        // difference between knot time and other agent's origin time
+                        double base_time_difference = 
+                            duration<double>(current_time_on_knot - other_agents[j].origin).count();
+                        double other_knot_span = other_agents[j].knots[1] - other_agents[j].knots[0];
+
+                        // Out of range
+                        if (base_time_difference < 0) continue;
+
+                        int base_knot_start = (int)round(other_agents[j].knots[0] / other_knot_span);
+
+                        int upper_other_index = (int)ceil(base_time_difference / other_knot_span);
+                        int lower_other_index = (int)floor(base_time_difference / other_knot_span);
+
+                        upper_other_index = upper_other_index - base_knot_start;
+                        lower_other_index = lower_other_index - base_knot_start;
+
+                        if ((upper_other_index) > (other_agents[j].cp.size()) ||
+                            (lower_other_index) < 0)
+                            continue;
+                        
+                        for (int k = lower_other_index; k < upper_other_index; k++)
                         {
-                            int32_t other_knot_micro = (int32_t)(
-                                other_agents[j].knots[k] * pow(10,6));
-                            system_clock::time_point other_time_on_knot =
-                                other_agents[j].origin + std::chrono::microseconds(
-                                other_knot_micro);
-
-                            double time_diff = duration<double>(
-                                current_time_on_knot - other_time_on_knot).count();
-                            
-                            // std::cout << KYEL << "[optimization_server.h] " << time_diff << KNRM << std::endl;
-
-                            if (time_diff > 2.0 * dt)
-                            {
-                                k += (int)abs(floor(time_diff / dt));
-                                continue;
-                            }
-
-                            if (time_diff < -2.0 * dt)
-                                break;
-
                             Eigen::Vector3d dist_vec = cp[i] - other_agents[j].cp[k];
-                            double smallest_factor = 0.001;
+                            
+                            double z_additional = 0.0;
                             if (dist_vec.z() < smallest_factor && dist_vec.z() > -smallest_factor)
                             {
-                                dist_vec.z() = dist_vec.z() + random_factor * 0.3;
+                                dist_vec.z() = dist_vec.z() + random_factor * multiplier;
+                                z_additional = random_factor * multiplier;
                             }
 
                             double ellip_dist = sqrt(dist_vec(2) * dist_vec(2) * inv_a2 + (dist_vec(0) * dist_vec(0) + dist_vec(1) * dist_vec(1)) * inv_b2);
@@ -315,7 +335,7 @@ namespace trajectory_server
                             Vector3d Coeff = Vector3d(
                                 -2 * (CLEARANCE / ellip_dist - 1) * inv_b2,
                                 -2 * (CLEARANCE / ellip_dist - 1) * inv_b2,
-                                -2 * (CLEARANCE / ellip_dist - 1) * inv_a2
+                                -2 * ((CLEARANCE + z_additional) / ellip_dist - 1) * inv_a2
                             );
 
                             if (dist_err < 0 || dist_vec.norm() == 0)
@@ -326,14 +346,14 @@ namespace trajectory_server
                             {
                                 // std::cout << KYEL << "[bspline_optimization.h] dist_err " << dist_err 
                                 //     << " magnitude " << magnitude << " dist_vec " << dist_vec.norm() << std::endl;
-                                cost = cost + magnitude * pow(dist_err, 2);
-                                gradient.col(i) = gradient.col(i) + magnitude * (Coeff.array() * dist_vec.array()).matrix();
+                                cost = cost + 1 * pow(dist_err, 2);
+                                gradient.col(i) = gradient.col(i) + 1 * (Coeff.array() * dist_vec.array()).matrix();
                                 if (i > affected_range && i < cp.size() - affected_range)
                                 {
                                     for (int l = 0; l < affected_range*2+1; l++)
                                     {
-                                        if (l == affected_range)
-                                            continue;
+                                        if (l == affected_range) continue;
+
                                         cost = cost + 1 * pow(dist_err, 2);
                                         gradient.col(i - affected_range + l) = 
                                             gradient.col(i - affected_range + l) + 1 * (Coeff.array() * dist_vec.array()).matrix();
@@ -363,7 +383,7 @@ namespace trajectory_server
                 MatrixXd gradient = MatrixXd::Zero(3,col);
                 VectorXd grad_single = VectorXd::Zero(col * 3);
 
-                double pz_expansion_factor = 2.5;
+                double pz_expansion_factor = 2.0;
 
                 for (int i = 0; i < cp.size(); i++)
                 { 
@@ -412,7 +432,7 @@ namespace trajectory_server
 
             void set_params_and_data(
                 int _uav_idx,
-                double _dt, double _max_acc, double _protected_zone,
+                double _dt, double _max_acc, double _max_vel, double _protected_zone,
                 vector<Eigen::Vector3d> _reference_cp, 
                 pcl::PointCloud<pcl::PointXYZ>::Ptr _full_pcl,
                 vector<double> _time_points, 
@@ -422,6 +442,7 @@ namespace trajectory_server
                 uav_idx = _uav_idx;
                 dt = _dt; 
                 max_acc = _max_acc;
+                max_vel = _max_vel;
                 protected_zone = _protected_zone;
 
                 // Reset values
@@ -440,21 +461,19 @@ namespace trajectory_server
                 // Index for weights
                 // 0. _weight_smooth = weight_vector[0]; 
                 // 1. _weight_feas = weight_vector[1];
-                // 2. _weight_term = weight_vector[2];
-                // 3. _weight_static = weight_vector[3];
-                // 4. _weight_reci = weight_vector[4];
+                // 2. _weight_static = weight_vector[2];
+                // 3. _weight_reci = weight_vector[3];
                 weight_smooth = weight_vector[0]; 
                 weight_feas = weight_vector[1];
-                weight_term = weight_vector[2];
-                weight_static = weight_vector[3];
-                weight_reci = weight_vector[4];
+                weight_static = weight_vector[2];
+                weight_reci = weight_vector[3];
             }
 
             double operator()(const VectorXd& x, VectorXd& grad)
             {
                 double fx = 0.0;            
                 obs_pcl.clear();
-                double factor = 2.0;
+                double factor = 5.0;
                 Eigen::Vector3d dimensions = Eigen::Vector3d(
                     factor * protected_zone,
                     factor * protected_zone,
@@ -486,18 +505,17 @@ namespace trajectory_server
                 smoothnessCost(cp);
                 reciprocalAvoidanceCost(cp, time_points);
                 feasibilityCost(cp);
+                staticCollisionCost(cp);
 
                 fx = weight_smooth * fx_smooth +
                     weight_feas * fx_feas +
-                    // weight_term * fx_term +
-                    // weight_static * fx_static +
+                    weight_static * fx_static +
                     weight_reci * fx_reci;
 
                 for (int i = 0; i < col*3; i++)
                     grad[i] = weight_smooth * grad_smooth(i) +
                         weight_feas * grad_feas(i) + 
-                        // weight_term * grad_term(i) +
-                        // weight_static * grad_static(i) +
+                        weight_static * grad_static(i) +
                         weight_reci * grad_reci(i);
                 
                 return fx;
