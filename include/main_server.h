@@ -189,14 +189,13 @@ namespace trajectory_server
                 vector<double> weight_vector, double max_acc, int uav_idx)
             {
                 _uav_idx = uav_idx;
-                if (weight_vector.size() != 5)
+                if (weight_vector.size() != 4)
                     return;
                 // Index for weights
                 // 0. _weight_smooth = weight_vector[0]; 
                 // 1. _weight_feas = weight_vector[1];
-                // 2. _weight_term = weight_vector[2];
-                // 3. _weight_static = weight_vector[3];
-                // 4. _weight_reci = weight_vector[4];
+                // 2. _weight_static = weight_vector[2];
+                // 3. _weight_reci = weight_vector[3];
                 _weight_vector = weight_vector;
                 _max_acc = max_acc;
             }
