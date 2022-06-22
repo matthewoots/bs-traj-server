@@ -75,9 +75,10 @@ namespace trajectory_server
             // Set up parameters
             LBFGSBParam<double> param;  // New parameter class
             param.epsilon = 1e-6;
-            // param.delta = 1e-3;
+            // param.m = 6;
+            // param.delta = 1e-9;
             param.max_iterations = 10; // Stable is 20
-            param.max_step = 0.20; // default is 1e-4
+            param.max_step = 0.25; // default is 1e-4
             param.max_linesearch = 10; // Stable is 20
             // param.linesearch = LBFGS_LINESEARCH_BACKTRACKING_STRONG_WOLFE;
         
@@ -128,6 +129,7 @@ namespace trajectory_server
 
             vector<Vector3d> reference_cp;
             vector<double> time_points;
+            vector<vector<int>> matching_query_index;
 
             system_clock::time_point origin_time;
 
@@ -273,18 +275,16 @@ namespace trajectory_server
 
                 for (int i = 0; i < cp.size(); i++)
                 {
-                    int32_t current_knot_micro = (int32_t)(knots[i] * pow(10,6));
-                    system_clock::time_point current_time_on_knot =
-                        origin_time + std::chrono::microseconds(current_knot_micro);
                     
                     for (int j = 0; j < other_agents.size(); j++)
                     {
-                        if (other_agents[j].id == uav_idx) continue;
-                        if (other_agents[j].cp.empty()) continue;
+                        if (matching_query_index[i][j] < 0)
+                            continue;
 
-                        // double origin_diff = duration<double>(other_agents[j].origin - origin_time).count();
-                        // std::cout << "[optimization_server.h] uav " << uav_idx << " on " <<
-                        //     other_agents[j].id << " " << KYEL << origin_diff << KNRM << std::endl;
+                        int lower_other_index = matching_query_index[i][j];
+                        int upper_other_index = lower_other_index + 1;
+                        
+                        // Cleared all the checks before getting control points from timestamp
                         
                         double multiplier = 0.3;
                         double smallest_factor = 0.001;
@@ -296,26 +296,6 @@ namespace trajectory_server
                         
                         if (random_factor < 0.0 && random_factor > -0.1)
                             random_factor = -0.1;
-
-                        // difference between knot time and other agent's origin time
-                        double base_time_difference = 
-                            duration<double>(current_time_on_knot - other_agents[j].origin).count();
-                        double other_knot_span = other_agents[j].knots[1] - other_agents[j].knots[0];
-
-                        // Out of range
-                        if (base_time_difference < 0) continue;
-
-                        int base_knot_start = (int)round(other_agents[j].knots[0] / other_knot_span);
-
-                        int upper_other_index = (int)ceil(base_time_difference / other_knot_span);
-                        int lower_other_index = (int)floor(base_time_difference / other_knot_span);
-
-                        upper_other_index = upper_other_index - base_knot_start;
-                        lower_other_index = lower_other_index - base_knot_start;
-
-                        if ((upper_other_index) > (other_agents[j].cp.size()) ||
-                            (lower_other_index) < 0)
-                            continue;
                         
                         for (int k = lower_other_index; k < upper_other_index; k++)
                         {
@@ -344,16 +324,10 @@ namespace trajectory_server
                             }
                             else
                             {
-                                // std::cout << KYEL << "[bspline_optimization.h] dist_err " << dist_err 
-                                //     << " magnitude " << magnitude << " dist_vec " << dist_vec.norm() << std::endl;
-                                cost = cost + 1 * pow(dist_err, 2);
-                                gradient.col(i) = gradient.col(i) + 1 * (Coeff.array() * dist_vec.array()).matrix();
                                 if (i > affected_range && i < cp.size() - affected_range)
                                 {
                                     for (int l = 0; l < affected_range*2+1; l++)
                                     {
-                                        if (l == affected_range) continue;
-
                                         cost = cost + 1 * pow(dist_err, 2);
                                         gradient.col(i - affected_range + l) = 
                                             gradient.col(i - affected_range + l) + 1 * (Coeff.array() * dist_vec.array()).matrix();
@@ -448,12 +422,59 @@ namespace trajectory_server
                 // Reset values
                 reference_cp.clear();
                 _full_pcl->points.clear();
+                matching_query_index.clear();
 
                 reference_cp = _reference_cp;
                 full_pcl = _full_pcl;
                 time_points = _time_points;
                 other_agents = _other_agents;
                 origin_time = _origin_time;
+
+                for (int i = 0; i < _reference_cp.size(); i++)
+                {
+                    vector<int> sub_matching_query_index;
+                    for (int j = 0; j < other_agents.size(); j++)
+                    {
+                        sub_matching_query_index.push_back(-1);
+                    }
+                    matching_query_index.push_back(sub_matching_query_index);
+                }
+
+                for (int i = 0; i < _reference_cp.size(); i++)
+                {
+                    int32_t current_knot_micro = (int32_t)(time_points[i] * pow(10,6));
+                    system_clock::time_point current_time_on_knot =
+                        origin_time + std::chrono::microseconds(current_knot_micro);
+                    
+                    for (int j = 0; j < other_agents.size(); j++)
+                    {
+                        if (other_agents[j].id == uav_idx) continue;
+                        if (other_agents[j].cp.empty()) continue;
+
+                        // difference between knot time and other agent's origin time
+                        double base_time_difference = 
+                            duration<double>(current_time_on_knot - other_agents[j].origin).count();
+                        double other_knot_span = other_agents[j].knots[1] - other_agents[j].knots[0];
+
+                        // Out of range
+                        if (base_time_difference < 0) continue;
+
+                        int base_knot_start = (int)round(other_agents[j].knots[0] / other_knot_span);
+
+                        
+                        int lower_other_index = (int)floor(base_time_difference / other_knot_span);
+                        int upper_other_index = lower_other_index + 1;
+
+                        upper_other_index = upper_other_index - base_knot_start;
+                        lower_other_index = lower_other_index - base_knot_start;
+
+                        if ((upper_other_index) > (other_agents[j].cp.size()) ||
+                            (lower_other_index) < 0)
+                            continue;
+                        
+                        matching_query_index[i][j] = lower_other_index;
+                    }
+                }
             }
 
             void set_weights(vector<double> weight_vector)

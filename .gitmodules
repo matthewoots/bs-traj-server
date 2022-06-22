@@ -1,9 +1,12 @@
 [submodule "libbspline"]
 	path = libbspline
 	url = https://github.com/matthewoots/libbspline.git
+	branch = master
 [submodule "LBFGSpp"]
 	path = LBFGSpp
 	url = https://github.com/matthewoots/LBFGSpp.git
+	branch = master
 [submodule "librrtserver"]
 	path = librrtserver
 	url = https://github.com/matthewoots/librrtserver.git
+	branch = master
