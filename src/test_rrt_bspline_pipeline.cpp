@@ -19,6 +19,7 @@
 #include "trajectory_server.h"
 #include "main_server.h"
 #include <random>
+// #include <iomanip>
 
 #define KNRM  "\033[0m"
 #define KRED  "\033[31m"
@@ -159,17 +160,17 @@ int main()
         trajectory_server::bspline_server::pva_cmd cmd;
         cmd = ms.update_bs_path_get_command();
 
-        IOFormat CleanFmt(3, 0, ", ", "\n", "[", "]");
-        std::cout << "[pipeline] time: " << 
-            KRED << std::setprecision(3) << ms.get_start_time()  << KNRM <<
-            " " << 
-            KBLU <<  std::setprecision(3) << cmd.t  << KNRM <<
-            " " << 
-            KRED << std::setprecision(3) << ms.get_end_time()  << KNRM <<
-            " position: " << 
-            KBLU << cmd.p.transpose().format(CleanFmt) << KNRM << 
-            " total velocity: " << 
-            KBLU << std::setprecision(3) << cmd.v.norm() << KNRM << std::endl;
+        // IOFormat CleanFmt(3, 0, ", ", "\n", "[", "]");
+        // std::cout << "[pipeline] time: " << 
+        //     KRED << std::setprecision(3) << ms.get_start_time()  << KNRM <<
+        //     " " << 
+        //     KBLU <<  std::setprecision(3) << cmd.t  << KNRM <<
+        //     " " << 
+        //     KRED << std::setprecision(3) << ms.get_end_time()  << KNRM <<
+        //     " position: " << 
+        //     KBLU << cmd.p.transpose().format(CleanFmt) << KNRM << 
+        //     " total velocity: " << 
+        //     KBLU << std::setprecision(3) << cmd.v.norm() << KNRM << std::endl;
         
         double offset_ms = 0.0;
         if (ms.get_bspline_time() - time > 0)
